@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}AI Budget Planner — SafaraOne{% endblock %}
+
+{% block content %}
+
+<section style="padding:calc(var(--nav-height) + 48px) 0 48px;background:radial-gradient(ellipse at 50% 0%,rgba(245,158,11,0.1) 0%,transparent 60%)">
+  <div class="container text-center">
+    <div class="section-label" style="justify-content:center"><i data-lucide="sparkles" style="width:14px;height:14px"></i> Powered by AI</div>
+    <h1 class="display-lg" style="margin-top:12px">Your <span class="text-gradient">Perfect Trip</span>,<br/>Planned in Seconds</h1>
+    <p style="color:var(--text-secondary);max-width:540px;margin:16px auto 0;font-size:1rem;line-height:1.7">
+      Tell us your destination, dates, and budget. Our AI optimizer builds your complete
+      itinerary — accommodation + experiences + guide — maximizing every dollar.
+    </p>
+  </div>
+</section>
+
+<section class="section" style="padding-top:0">
+  <div class="container-narrow">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:start">
+
+      <!-- Form Panel -->
+      <div class="planner-form-wrap">
+        <div style="margin-bottom:28px">
+          <h2 style="font-family:'Outfit',sans-serif;font-size:1.3rem;margin-bottom:6px">Trip Details</h2>
+          <p style="font-size:0.85rem;color:var(--text-secondary)">Fill in your preferences and click generate.</p>
+        </div>
+
+        <form class="planner-form" id="planner-form">
+          <div class="form-group">
+            <label class="form-label">📍 Destination</label>
+            <select name="destination_id" class="form-select" required>
+              <option value="">Select destination…</option>
+              {% for dest in destinations %}
+              <option value="{{ dest.id }}">{{ dest.name }} — {{ dest.tagline }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label class="form-label">📅 Number of Days</label>
+              <select name="days" class="form-select">
+                {% for d in [2,3,4,5,7,10,14] %}
+                <option value="{{ d }}" {% if d == 4 %}selected{% endif %}>{{ d }} Days</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">👥 Travelers</label>
+              <select name="travelers" class="form-select">
+                {% for t in [1,2,3,4,5,6] %}
+                <option value="{{ t }}" {% if t == 2 %}selected{% endif %}>{{ t }} Person{{ 's' if t > 1 else '' }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">💰 Total Budget (USD)</label>
+            <input type="number" name="budget_usd" class="form-input" placeholder="e.g. 800"
+                   min="50" max="50000" step="50" value="800" required />
+            <p style="font-size:0.75rem;color:var(--text-muted);margin-top:4px">Minimum $50 · Covers stays, experiences & guide</p>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-lg w-full" id="generate-btn" style="justify-content:center">
+            <i data-lucide="sparkles" style="width:18px;height:18px"></i>
+            Generate My Itinerary
+          </button>
+        </form>
+
+        <!-- How it works -->
+        <div style="margin-top:32px;border-top:1px solid var(--border);padding-top:24px">
+          <p style="font-size:0.78rem;color:var(--text-muted);font-weight:600;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:16px">How It Works</p>
+          {% for step, desc in [("1. Input", "Tell us destination, budget & dates"), ("2. Optimize", "AI picks best value combo for your tier"), ("3. Book", "Book each item directly with one click")] %}
+          <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
+            <div style="width:28px;height:28px;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.25);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.72rem;font-weight:800;color:var(--amber);flex-shrink:0">{{ loop.index }}</div>
+            <div>
+              <div style="font-size:0.85rem;font-weight:600">{{ step }}</div>
+              <div style="font-size:0.78rem;color:var(--text-muted)">{{ desc }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Result Panel -->
+      <div id="planner-result">
+        <!-- Placeholder when empty -->
+        <div style="background:var(--bg-card);border:1px dashed var(--border);border-radius:var(--radius-xl);padding:48px;text-align:center;color:var(--text-muted)">
+          <div style="width:64px;height:64px;background:rgba(245,158,11,0.1);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:28px">✨</div>
+          <h3 style="font-family:'Outfit',sans-serif;color:var(--text-secondary);margin-bottom:8px">Your itinerary will appear here</h3>
+          <p style="font-size:0.85rem">Fill in the form and click "Generate" to see your AI-crafted trip plan.</p>
+          <div style="margin-top:24px;display:flex;flex-direction:column;gap:8px;text-align:left;max-width:260px;margin-left:auto;margin-right:auto">
+            {% for item in ["Best-value accommodation selected", "Top-rated experiences chosen", "Expert local guide matched", "Full budget breakdown", "Local tips included"] %}
+            <div style="display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--text-muted)">
+              <div style="width:16px;height:16px;border-radius:50%;background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--amber);flex-shrink:0">✓</div>
+              {{ item }}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sample itineraries -->
+    <div style="margin-top:64px">
+      <h2 class="display-sm text-center" style="margin-bottom:8px">Sample Itineraries</h2>
+      <p class="text-center" style="color:var(--text-secondary);margin-bottom:40px">Click to load into the planner</p>
+      <div class="grid-3">
+        {% set samples = [
+          ("zanzibar", 800, 4, 2, "Zanzibar Honeymoon", "4 days · $800 · 2 people", "🏖️"),
+          ("serengeti", 2000, 5, 2, "Serengeti Safari", "5 days · $2,000 · 2 people", "🦁"),
+          ("kilimanjaro", 500, 3, 1, "Kili Coffee & Culture", "3 days · $500 · 1 person", "⛰️"),
+        ] %}
+        {% for dest_id, budget, days, travs, title, desc, emoji in samples %}
+        <button onclick="loadSample('{{ dest_id }}', {{ budget }}, {{ days }}, {{ travs }})"
+                class="card" style="text-align:left;cursor:pointer;padding:24px;background:var(--bg-card2)">
+          <div style="font-size:2rem;margin-bottom:12px">{{ emoji }}</div>
+          <div style="font-family:'Outfit',sans-serif;font-size:1rem;font-weight:700;margin-bottom:4px">{{ title }}</div>
+          <div style="font-size:0.82rem;color:var(--text-secondary)">{{ desc }}</div>
+          <div style="margin-top:12px;font-size:0.78rem;color:var(--amber);font-weight:600">Click to plan →</div>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<button class="scroll-top"><i data-lucide="arrow-up" style="width:18px;height:18px"></i></button>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function loadSample(destId, budget, days, travelers) {
+  const form = document.getElementById('planner-form');
+  form.querySelector('[name="destination_id"]').value = destId;
+  form.querySelector('[name="budget_usd"]').value = budget;
+  form.querySelector('[name="days"]').value = days;
+  form.querySelector('[name="travelers"]').value = travelers;
+  form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  setTimeout(() => form.dispatchEvent(new Event('submit')), 400);
+}
+</script>
+{% endblock %}

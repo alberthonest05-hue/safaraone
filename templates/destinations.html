@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Destinations — SafaraOne{% endblock %}
+{% block content %}
+
+<section class="page-hero">
+  <div class="page-hero-bg"></div>
+  <div class="container">
+    <div class="section-label" style="justify-content:center"><i data-lucide="map" style="width:14px;height:14px"></i> Explore Tanzania</div>
+    <h1 class="display-lg" style="margin-top:12px">Choose Your <span class="text-gradient">Destination</span></h1>
+    <p>Three extraordinary worlds — one incredible country. Which one calls to you?</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="grid-3" style="gap:32px">
+      {% for dest in destinations %}
+      <a href="{{ url_for('destination_detail', dest_id=dest.id) }}" class="dest-card card" style="display:block">
+        <img src="{{ dest.image_url }}" alt="{{ dest.name }}" loading="lazy" style="width:100%;height:380px;object-fit:cover;transition:transform 0.7s ease" />
+        <div class="dest-card-cta">Explore →</div>
+        <div class="dest-card-body">
+          <h2 class="dest-card-title">{{ dest.name }}</h2>
+          <p class="dest-card-tagline">{{ dest.tagline }}</p>
+          <p style="color:rgba(255,255,255,0.6);font-size:0.85rem;margin-top:10px;line-height:1.6">{{ dest.description[:120] }}...</p>
+          <div class="dest-card-meta" style="margin-top:16px">
+            <span class="dest-meta-item"><i data-lucide="calendar" style="width:12px;height:12px"></i> {{ dest.best_months }}</span>
+            <span class="dest-meta-item"><i data-lucide="dollar-sign" style="width:12px;height:12px"></i> ~${{ dest.average_daily_budget_usd }}/day</span>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+            {% for h in dest.highlights[:3] %}
+            <span style="font-size:0.72rem;padding:3px 10px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);border-radius:99px;color:rgba(255,255,255,0.7)">{{ h }}</span>
+            {% endfor %}
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+
+    <!-- Destination comparison table -->
+    <div style="margin-top:64px">
+      <h2 class="display-sm text-center mb-24">Quick Comparison</h2>
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-xl);overflow:hidden">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border)">
+              <th style="padding:18px 24px;text-align:left;font-size:0.82rem;color:var(--text-muted);font-weight:600;letter-spacing:0.06em;text-transform:uppercase">Feature</th>
+              {% for dest in destinations %}
+              <th style="padding:18px 24px;text-align:left;font-family:'Outfit',sans-serif;font-size:1rem;font-weight:700;color:var(--amber)">{{ dest.name }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% set rows = [
+              ("Best For", ["Beach & Culture", "Wildlife & Safari", "Trekking & Adventure"]),
+              ("Daily Budget", ["$50–$200", "$150–$500+", "$80–$300+"]),
+              ("Best Months", ["Jun–Oct, Dec–Feb", "Jun–Sep, Jan–Feb", "Jan–Mar, Jun–Oct"]),
+              ("Language", ["Swahili, English", "Swahili, English, Maa", "Swahili, English"]),
+              ("Accommodations", ["42 options", "18 options", "24 options"]),
+            ] %}
+            {% for label, values in rows %}
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:14px 24px;font-size:0.85rem;color:var(--text-secondary);font-weight:500">{{ label }}</td>
+              {% for v in values %}
+              <td style="padding:14px 24px;font-size:0.88rem;color:var(--text-primary)">{{ v }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<button class="scroll-top"><i data-lucide="arrow-up" style="width:18px;height:18px"></i></button>
+{% endblock %}

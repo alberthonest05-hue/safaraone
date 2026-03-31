@@ -1,0 +1,574 @@
+"""
+SafaraOne — All-in-One Travel Planning Platform
+Python Flask Web Application
+Author: SafaraOne Team
+"""
+
+from flask import Flask, render_template, request, jsonify, redirect, url_for, make_response
+from dotenv import load_dotenv
+import os
+import uuid
+
+# Phase 2: Load environment variables FIRST before importing models/services
+load_dotenv()
+
+from models import db, User, Destination, Accommodation, Experience, Guide, Booking, Review
+from sqlalchemy import distinct
+from flask_jwt_extended import (
+    JWTManager, create_access_token, jwt_required, get_jwt_identity, 
+    set_access_cookies, unset_jwt_cookies
+)
+from flask_cors import CORS
+
+# Phase 2B: Use DB-constrained OpenAI Planner from services
+from services.planner import generate_itinerary
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "safaraone-secret-key-2025")
+CORS(app, supports_credentials=True)
+
+# Database Configuration
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "sqlite:///safaraone.db")
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# JWT Configuration
+app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "safaraone-jwt-secret-key-2025")
+app.config["JWT_TOKEN_LOCATION"] = ["headers", "cookies"]
+app.config["JWT_COOKIE_SECURE"] = False # Set to True in production (HTTPS)
+app.config["JWT_COOKIE_CSRF_PROTECT"] = False # Simplify for dev
+
+# Initialize Extensions
+db.init_app(app)
+jwt = JWTManager(app)
+
+with app.app_context():
+    db.create_all()
+
+
+# ─────────────────────────────────────────────
+#  AUTH API ENDPOINTS (Phase 2A)
+# ─────────────────────────────────────────────
+
+@app.route("/api/auth/register", methods=["POST"])
+def api_register():
+    data = request.get_json()
+    username = data.get("username")
+    email = data.get("email")
+    password = data.get("password")
+    role = data.get("role", "tourist")
+
+    if User.query.filter_by(email=email).first():
+        return jsonify({"error": "Email already registered"}), 400
+    
+    if User.query.filter_by(username=username).first():
+        return jsonify({"error": "Username already taken"}), 400
+
+    new_user = User(username=username, email=email, role=role)
+    new_user.set_password(password)
+    
+    db.session.add(new_user)
+    db.session.commit()
+
+    return jsonify({"message": "User registered successfully", "user_id": new_user.id}), 201
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def api_login():
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+
+    user = User.query.filter_by(username=username).first()
+    if not user or not user.check_password(password):
+        return jsonify({"error": "Invalid username or password"}), 401
+
+    access_token = create_access_token(identity=str(user.id))
+    resp = jsonify({"message": "Login successful", "role": user.role})
+    set_access_cookies(resp, access_token)
+    return resp, 200
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def api_logout():
+    resp = jsonify({"message": "Logout successful"})
+    unset_jwt_cookies(resp)
+    return resp, 200
+
+
+# ─────────────────────────────────────────────
+#  MAIN PAGES
+# ─────────────────────────────────────────────
+
+@app.route("/")
+def index():
+    """Landing page."""
+    featured = [d.to_dict() for d in Destination.query.limit(3).all()]
+    top_experiences = [e.to_dict() for e in Experience.query.limit(6).all()]
+    top_guides = [g.to_dict() for g in Guide.query.limit(4).all()]
+    return render_template(
+        "index.html",
+        destinations=featured,
+        experiences=top_experiences,
+        guides=top_guides,
+    )
+
+
+@app.route("/destinations")
+def destinations():
+    """All destinations page."""
+    all_dests = [d.to_dict() for d in Destination.query.all()]
+    return render_template("destinations.html", destinations=all_dests)
+
+
+@app.route("/destinations/<dest_id>")
+def destination_detail(dest_id):
+    """Single destination detail page."""
+    # Apply Issue 1: db.session.get
+    dest = db.session.get(Destination, dest_id)
+    if not dest:
+        return redirect(url_for("destinations"))
+    
+    stays = [a.to_dict() for a in Accommodation.query.filter_by(destination_id=dest_id).all()]
+    experiences = [e.to_dict() for e in Experience.query.filter_by(destination_id=dest_id).all()]
+    guides = [g.to_dict() for g in Guide.query.filter_by(destination_id=dest_id).all()]
+    
+    return render_template(
+        "destination_detail.html",
+        destination=dest.to_dict(),
+        stays=stays,
+        experiences=experiences,
+        guides=guides,
+    )
+
+
+@app.route("/stays")
+def stays():
+    """Accommodation search page."""
+    dest_filter = request.args.get("destination", "")
+    budget_filter = request.args.get("budget", "")
+    
+    query = Accommodation.query
+    if dest_filter:
+        query = query.filter_by(destination_id=dest_filter)
+    if budget_filter:
+        query = query.filter_by(tier=budget_filter)
+        
+    results = [a.to_dict() for a in query.all()]
+    all_dests = [d.to_dict() for d in Destination.query.all()]
+    
+    return render_template(
+        "stays.html",
+        accommodations=results,
+        destinations=all_dests,
+        current_dest=dest_filter,
+        current_budget=budget_filter,
+    )
+
+
+@app.route("/experiences")
+def experiences():
+    """Experiences & activities page."""
+    dest_filter = request.args.get("destination", "")
+    category_filter = request.args.get("category", "")
+    
+    query = Experience.query
+    if dest_filter:
+        query = query.filter_by(destination_id=dest_filter)
+    if category_filter:
+        query = query.filter_by(category=category_filter)
+        
+    results = [e.to_dict() for e in query.all()]
+    all_dests = [d.to_dict() for d in Destination.query.all()]
+    
+    # get distinct categories
+    categories = sorted([
+        r[0] for r in db.session.query(distinct(Experience.category))
+        .filter(Experience.category.isnot(None)).all()
+    ])
+
+    return render_template(
+        "experiences.html",
+        experiences=results,
+        destinations=all_dests,
+        categories=categories,
+        current_dest=dest_filter,
+        current_category=category_filter,
+    )
+
+
+@app.route("/guides")
+def guides():
+    """Tour guide marketplace page."""
+    dest_filter = request.args.get("destination", "")
+    spec_filter = request.args.get("specialization", "")
+    
+    query = Guide.query
+    if dest_filter:
+        query = query.filter_by(destination_id=dest_filter)
+        
+    guides_list = query.all()
+    # Filter by json contained specializations if spec_filter provided
+    if spec_filter:
+        guides_list = [g for g in guides_list if g.specializations and spec_filter in g.specializations]
+        
+    results = [g.to_dict() for g in guides_list]
+    all_dests = [d.to_dict() for d in Destination.query.all()]
+    
+    all_all_guides = Guide.query.all()
+    all_specs = sorted(list(set(s for g in all_all_guides if g.specializations for s in g.specializations)))
+    
+    return render_template(
+        "guides.html",
+        guides=results,
+        destinations=all_dests,
+        specializations=all_specs,
+        current_dest=dest_filter,
+        current_spec=spec_filter,
+    )
+
+
+@app.route("/planner")
+def planner():
+    """AI Budget Planner page."""
+    all_dests = [d.to_dict() for d in Destination.query.all()]
+    return render_template("planner.html", destinations=all_dests)
+
+
+@app.route("/api/generate-itinerary", methods=["POST"])
+def api_generate_itinerary():
+    """API endpoint: Generate AI budget itinerary."""
+    data = request.get_json()
+    destination_id = data.get("destination_id", "zanzibar")
+    budget_usd = float(data.get("budget_usd", 500))
+    days = int(data.get("days", 3))
+    travelers = int(data.get("travelers", 1))
+    
+    itinerary = generate_itinerary(destination_id, budget_usd, days, travelers)
+    return jsonify(itinerary)
+
+
+@app.route("/auth")
+def auth():
+    """Login / Register page."""
+    return render_template("auth.html")
+
+
+@app.route("/about")
+def about():
+    """About SafaraOne page."""
+    return render_template("about.html")
+
+
+# ─────────────────────────────────────────────
+#  API ENDPOINTS
+# ─────────────────────────────────────────────
+
+@app.route("/api/destinations")
+def api_destinations():
+    return jsonify([d.to_dict() for d in Destination.query.all()])
+
+@app.route("/api/stays")
+def api_stays():
+    dest = request.args.get("destination", "")
+    query = Accommodation.query
+    if dest:
+        query = query.filter_by(destination_id=dest)
+    return jsonify([a.to_dict() for a in query.all()])
+
+@app.route("/api/experiences")
+def api_experiences():
+    dest = request.args.get("destination", "")
+    query = Experience.query
+    if dest:
+        query = query.filter_by(destination_id=dest)
+    return jsonify([e.to_dict() for e in query.all()])
+
+@app.route("/api/guides")
+def api_guides():
+    dest = request.args.get("destination", "")
+    query = Guide.query
+    if dest:
+        query = query.filter_by(destination_id=dest)
+    return jsonify([g.to_dict() for g in query.all()])
+
+# ─────────────────────────────────────────────
+#  GUIDE PROFILES & REGISTRATION (Phase 2B)
+# ─────────────────────────────────────────────
+
+@app.route("/api/guides/register", methods=["POST"])
+def api_guide_register():
+    data = request.get_json()
+    username = data.get("username")
+    email = data.get("email")
+    password = data.get("password")
+    
+    name = data.get("name")
+    destination_id = data.get("destination_id")
+    price_per_day_usd = data.get("price_per_day_usd", 50)
+    
+    if not all([username, email, password, name, destination_id]):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    if not db.session.get(Destination, destination_id):
+        return jsonify({"error": "Invalid destination_id"}), 400
+    
+    if User.query.filter_by(email=email).first() or User.query.filter_by(username=username).first():
+        return jsonify({"error": "User already exists"}), 400
+
+    new_user = User(username=username, email=email, role="guide")
+    new_user.set_password(password)
+    db.session.add(new_user)
+    db.session.flush() # Get new_user.id
+    
+    guide_id = f"guide-{uuid.uuid4().hex[:8]}"
+
+    new_guide = Guide(
+        id=guide_id,
+        user_id=new_user.id,
+        destination_id=destination_id,
+        name=name,
+        price_per_day_usd=float(price_per_day_usd),
+        title=data.get("title", ""),
+        bio=data.get("bio", ""),
+        languages=data.get("languages", ["English"]),
+        specializations=data.get("specializations", [])
+    )
+    db.session.add(new_guide)
+    db.session.commit()
+
+    return jsonify({"message": "Guide registered", "guide_id": guide_id}), 201
+
+@app.route("/api/guides/me", methods=["GET", "PUT"])
+@jwt_required()
+def api_guides_me():
+    user_id = int(get_jwt_identity())
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    if user.role != "guide":
+        return jsonify({"error": "Unauthorized"}), 403
+        
+    guide = Guide.query.filter_by(user_id=user_id).first()
+    if not guide:
+        return jsonify({"error": "Profile not found"}), 404
+
+    if request.method == "GET":
+        return jsonify(guide.to_dict())
+        
+    if request.method == "PUT":
+        data = request.get_json()
+        if "bio" in data: guide.bio = data["bio"]
+        if "title" in data: guide.title = data["title"]
+        if "price_per_day_usd" in data: guide.price_per_day_usd = float(data["price_per_day_usd"])
+        if "availability" in data: guide.availability = data["availability"]
+        db.session.commit()
+        return jsonify({"message": "Profile updated", "guide": guide.to_dict()})
+
+@app.route("/api/guides/<id>", methods=["GET"])
+def api_get_guide(id):
+    guide = db.session.get(Guide, id)
+    if not guide:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(guide.to_dict())
+
+# ─────────────────────────────────────────────
+#  PHASE 2C: PAYMENTS & REVIEWS
+# ─────────────────────────────────────────────
+
+import stripe
+from datetime import datetime
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "sk_test_placeholder")
+
+@app.route("/api/bookings", methods=["POST"])
+@jwt_required()
+def api_create_booking():
+    VALID_ITEM_TYPES = {"accommodation", "experience", "guide"}
+    data = request.get_json()
+    user_id = int(get_jwt_identity())
+    
+    item_type = data.get("item_type")
+    amount_usd = float(data.get("amount_usd", 0))
+    item_id = data.get("item_id")
+    
+    if not item_type or item_type not in VALID_ITEM_TYPES:
+        return jsonify({"error": "Invalid or missing item_type"}), 400
+    if amount_usd <= 0:
+        return jsonify({"error": "Amount must be greater than 0"}), 400
+    if not item_id:
+        return jsonify({"error": "Missing item_id"}), 400
+    
+    scheduled_date_str = data.get("scheduled_date")
+    scheduled_date = None
+    if scheduled_date_str:
+        try:
+            scheduled_date = datetime.fromisoformat(scheduled_date_str)
+        except ValueError:
+            pass
+
+    booking = Booking(
+        user_id=user_id,
+        item_type=data.get("item_type"),   # 'guide', 'accommodation', 'experience'
+        item_id=data.get("item_id"),
+        amount_usd=float(data.get("amount_usd", 0)),
+        num_guests=int(data.get("num_guests", 1)),
+        scheduled_date=scheduled_date
+    )
+    db.session.add(booking)
+    db.session.commit()
+    return jsonify({"booking_id": booking.id}), 201
+
+@app.route("/api/checkout", methods=["POST"])
+@jwt_required()
+def api_checkout():
+    data = request.get_json()
+    booking_id = data.get("booking_id")
+    
+    booking = db.session.get(Booking, booking_id)
+    if not booking or str(booking.user_id) != str(get_jwt_identity()):
+        return jsonify({"error": "Booking not found or unauthorized"}), 404
+        
+    if booking.amount_usd <= 0:
+        return jsonify({"error": "Invalid booking amount"}), 400
+
+    base_url = os.environ.get("BASE_URL", "http://127.0.0.1:5050")
+        
+    session_params = {
+        "payment_method_types": ["card"],
+        "line_items": [{
+            "price_data": {
+                "currency": "usd",
+                "unit_amount": int(booking.amount_usd * 100),
+                "product_data": {
+                    "name": f"SafaraOne Booking: {booking.item_type.title()}"
+                },
+            },
+            "quantity": 1,
+        }],
+        "mode": "payment",
+        "success_url": f"{base_url}/success?session_id={{CHECKOUT_SESSION_ID}}",
+        "cancel_url": f"{base_url}/cancel",
+        "metadata": {
+            "booking_id": booking.id
+        }
+    }
+    
+    # Split Payments (Stripe Connect)
+    if booking.item_type == "guide":
+        guide = db.session.get(Guide, booking.item_id)
+        if guide and guide.stripe_account_id:
+            # 80% to guide, 20% platform fee
+            guide_amount = int((booking.amount_usd * 0.8) * 100)
+            session_params["payment_intent_data"] = {
+                "transfer_data": {
+                    "destination": guide.stripe_account_id,
+                    "amount": guide_amount
+                }
+            }
+            
+    try:
+        session = stripe.checkout.Session.create(**session_params)
+        booking.stripe_session_id = session.id
+        db.session.commit()
+        return jsonify({"checkout_url": session.url})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/webhooks/stripe", methods=["POST"])
+def api_webhook_stripe():
+    payload = request.get_data(as_text=True)
+    sig_header = request.headers.get("Stripe-Signature", "")
+    endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    
+    if not endpoint_secret:
+        return jsonify({"error": "Webhook secret not configured"}), 500
+        
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
+    except stripe.error.SignatureVerificationError:
+        return jsonify({"error": "Invalid signature"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+            
+    if event.get("type") == "checkout.session.completed":
+        session = event["data"]["object"]
+        booking_id = session.get("metadata", {}).get("booking_id")
+        if booking_id:
+            booking = db.session.get(Booking, int(booking_id))
+            if booking:
+                booking.status = "confirmed"
+                db.session.commit()
+                
+    return jsonify({"status": "success"}), 200
+
+
+@app.route("/api/mobile-money/checkout", methods=["POST"])
+@jwt_required()
+def api_mobile_money_checkout():
+    """Stub for Tanzanian Mobile Money (M-Pesa / AzamPay) push USSD flow"""
+    data = request.get_json()
+    booking_id = data.get("booking_id")
+    phone = data.get("phone", "")
+    
+    booking = db.session.get(Booking, booking_id)
+    if not booking:
+        return jsonify({"error": "Booking not found"}), 404
+        
+    tx_id = f"tz-{uuid.uuid4().hex[:8]}"
+    
+    # Simulate USSD Push Trigger
+    return jsonify({
+        "message": f"USSD push sent to {phone}. Awaiting user PIN.",
+        "transaction_id": tx_id,
+        "status": "pending_user_action"
+    })
+
+
+@app.route("/api/reviews", methods=["POST"])
+@jwt_required()
+def api_post_review():
+    data = request.get_json()
+    user_id = int(get_jwt_identity())
+    
+    item_type = data.get("item_type")
+    item_id = data.get("item_id")
+    rating = int(data.get("rating", 5))
+    comment = data.get("comment", "")
+    
+    if not item_type or not item_id:
+        return jsonify({"error": "Missing item info"}), 400
+        
+    if not 1 <= rating <= 5:
+        return jsonify({"error": "Rating must be between 1 and 5"}), 400
+        
+    try:
+        review = Review(
+            user_id=user_id,
+            item_type=item_type,
+            item_id=item_id,
+            rating=rating,
+            comment=comment
+        )
+        db.session.add(review)
+        db.session.commit()
+        
+        # Optionally update the parent aggregate rating
+        if item_type == "guide":
+            guide = db.session.get(Guide, item_id)
+            if guide:
+                total_r = guide.total_reviews or 0
+                current_rt = guide.rating or 0.0
+                new_total = total_r + 1
+                new_rating = ((current_rt * total_r) + rating) / new_total
+                guide.rating = round(new_rating, 1)
+                guide.total_reviews = new_total
+                db.session.commit()
+                
+        return jsonify({"message": "Review submitted successfully"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "You have already reviewed this item"}), 400
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=5050)

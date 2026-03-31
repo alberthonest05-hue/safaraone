@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Stays & Accommodations — SafaraOne{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+  <div class="page-hero-bg"></div>
+  <div class="container">
+    <div class="section-label" style="justify-content:center"><i data-lucide="bed-double" style="width:14px;height:14px"></i> Accommodations</div>
+    <h1 class="display-lg" style="margin-top:12px">Find Your Perfect <span class="text-gradient">Stay</span></h1>
+    <p>From luxury beachfront villas to authentic family guesthouses. Every budget, every style.</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <!-- Filters -->
+    <form method="GET" action="{{ url_for('stays') }}" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-xl);padding:28px;margin-bottom:40px;display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
+      <div style="flex:1;min-width:180px">
+        <label class="form-label">Destination</label>
+        <select name="destination" class="form-select" style="width:100%">
+          <option value="">All Destinations</option>
+          {% for dest in destinations %}
+          <option value="{{ dest.id }}" {% if current_dest == dest.id %}selected{% endif %}>{{ dest.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="flex:1;min-width:160px">
+        <label class="form-label">Budget Tier</label>
+        <select name="budget" class="form-select" style="width:100%">
+          <option value="">All Tiers</option>
+          <option value="budget" {% if current_budget == 'budget' %}selected{% endif %}>🟢 Budget</option>
+          <option value="mid-range" {% if current_budget == 'mid-range' %}selected{% endif %}>🔵 Mid-Range</option>
+          <option value="luxury" {% if current_budget == 'luxury' %}selected{% endif %}>🟡 Luxury</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" style="height:46px;align-self:flex-end;padding:0 28px">
+        <i data-lucide="search" style="width:16px;height:16px"></i> Filter
+      </button>
+      {% if current_dest or current_budget %}
+      <a href="{{ url_for('stays') }}" class="btn btn-ghost" style="height:46px;align-self:flex-end">Clear</a>
+      {% endif %}
+    </form>
+
+    <!-- Results count -->
+    <p style="color:var(--text-muted);margin-bottom:24px;font-size:0.9rem">
+      <strong style="color:var(--text-primary)">{{ accommodations|length }}</strong> accommodation{{ 's' if accommodations|length != 1 else '' }} found
+    </p>
+
+    <!-- Cards grid -->
+    <div class="grid-3">
+      {% for stay in accommodations %}
+      <div class="card stay-card">
+        <div class="stay-card-img card-img-wrap">
+          <img src="{{ stay.image_url }}" alt="{{ stay.name }}" class="card-img" loading="lazy" />
+          <div class="stay-card-badge">
+            {% if stay.tier == 'luxury' %}<span class="badge badge-luxury">Luxury</span>
+            {% elif stay.tier == 'mid-range' %}<span class="badge badge-mid">Mid-Range</span>
+            {% else %}<span class="badge badge-budget">Budget</span>{% endif %}
+          </div>
+          <div class="stay-price">${{ stay.price_per_night_usd }}<span>/night</span></div>
+        </div>
+        <div class="card-body">
+          <h3 class="card-title">{{ stay.name }}</h3>
+          <p class="card-subtitle">{{ stay.type | title }} · {{ stay.destination_id | title }}</p>
+          <div class="stars mb-8">
+            <span class="star-val">{{ stay.rating }}</span> ★★★★★
+            <span class="review-count">({{ stay.review_count }} reviews)</span>
+          </div>
+          <p style="font-size:0.82rem;color:var(--text-secondary);line-height:1.6;margin-bottom:12px">{{ stay.description[:110] }}...</p>
+          <div class="stay-amenities">
+            {% for a in stay.amenities[:5] %}<span class="amenity-tag">{{ a }}</span>{% endfor %}
+          </div>
+          <div style="display:flex;gap:8px;margin-top:16px">
+            <a href="{{ stay.booking_url }}" class="btn btn-primary btn-sm" style="flex:1;justify-content:center">
+              <i data-lucide="calendar-check" style="width:15px;height:15px"></i> Book Now
+            </a>
+            <button class="btn btn-ghost btn-sm" onclick="this.innerHTML='❤️ Saved'" title="Save">
+              <i data-lucide="heart" style="width:15px;height:15px"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div style="grid-column:1/-1;text-align:center;padding:64px 0;color:var(--text-muted)">
+        <i data-lucide="search-x" style="width:48px;height:48px;margin:0 auto 16px;display:block;opacity:0.4"></i>
+        <p>No stays found for the selected filters.</p>
+        <a href="{{ url_for('stays') }}" class="btn btn-ghost" style="margin-top:16px">Clear Filters</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<button class="scroll-top"><i data-lucide="arrow-up" style="width:18px;height:18px"></i></button>
+{% endblock %}

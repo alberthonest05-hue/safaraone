@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Experiences & Activities — SafaraOne{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+  <div class="page-hero-bg"></div>
+  <div class="container">
+    <div class="section-label" style="justify-content:center"><i data-lucide="zap" style="width:14px;height:14px"></i> Activities & Experiences</div>
+    <h1 class="display-lg" style="margin-top:12px">Unforgettable <span class="text-gradient">Experiences</span></h1>
+    <p>From dolphin swims to summit treks — every experience rated and priced transparently.</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <!-- Filters -->
+    <form method="GET" action="{{ url_for('experiences') }}" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-xl);padding:28px;margin-bottom:40px;display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
+      <div style="flex:1;min-width:180px">
+        <label class="form-label">Destination</label>
+        <select name="destination" class="form-select" style="width:100%">
+          <option value="">All Destinations</option>
+          {% for dest in destinations %}<option value="{{ dest.id }}" {% if current_dest == dest.id %}selected{% endif %}>{{ dest.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div style="flex:1;min-width:180px">
+        <label class="form-label">Category</label>
+        <select name="category" class="form-select" style="width:100%">
+          <option value="">All Categories</option>
+          {% for cat in categories %}<option value="{{ cat }}" {% if current_category == cat %}selected{% endif %}>{{ cat | title }}</option>{% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" style="height:46px;align-self:flex-end;padding:0 28px">
+        <i data-lucide="search" style="width:16px;height:16px"></i> Filter
+      </button>
+      {% if current_dest or current_category %}<a href="{{ url_for('experiences') }}" class="btn btn-ghost" style="height:46px;align-self:flex-end">Clear</a>{% endif %}
+    </form>
+
+    <p style="color:var(--text-muted);margin-bottom:24px;font-size:0.9rem">
+      <strong style="color:var(--text-primary)">{{ experiences|length }}</strong> experience{{ 's' if experiences|length != 1 else '' }} found
+    </p>
+
+    <div class="grid-3">
+      {% for exp in experiences %}
+      <div class="card">
+        <div class="exp-card-img card-img-wrap">
+          <img src="{{ exp.image_url }}" alt="{{ exp.title }}" class="card-img" loading="lazy" />
+          <div class="exp-duration">
+            <i data-lucide="clock" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:3px"></i>{{ exp.duration_hours }}h
+          </div>
+          <div style="position:absolute;top:12px;left:12px">
+            {% if exp.tier == 'luxury' %}<span class="badge badge-luxury">Luxury</span>
+            {% elif exp.tier == 'mid-range' %}<span class="badge badge-mid">Mid-Range</span>
+            {% else %}<span class="badge badge-budget">Budget</span>{% endif %}
+          </div>
+          {% if not exp.is_indoor %}
+          <div style="position:absolute;top:12px;right:12px">
+            <span style="background:rgba(10,10,15,0.6);backdrop-filter:blur(4px);padding:3px 8px;border-radius:99px;font-size:0.68rem;color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.1)">
+              <i data-lucide="sun" style="width:11px;height:11px;display:inline;vertical-align:middle"></i> Outdoor
+            </span>
+          </div>
+          {% endif %}
+        </div>
+        <div class="card-body">
+          <h3 class="card-title">{{ exp.title }}</h3>
+          <p class="card-subtitle">{{ exp.destination_id | title }} · {{ exp.category }}</p>
+          <div class="stars mb-8"><span class="star-val">{{ exp.rating }}</span> ★★★★★ <span class="review-count">({{ exp.review_count }})</span></div>
+          <p style="font-size:0.82rem;color:var(--text-secondary);line-height:1.6;margin-bottom:12px">{{ exp.description[:110] }}...</p>
+          <div class="exp-tags">
+            {% for tag in exp.tags[:3] %}<span class="exp-tag">{{ tag }}</span>{% endfor %}
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px">
+            <div>
+              <div class="exp-price">${{ exp.price_usd }} <span>/ person</span></div>
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px">Up to {{ exp.max_participants }} people</div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-ghost btn-sm" onclick="this.innerHTML='❤️'" title="Save"><i data-lucide="heart" style="width:14px;height:14px"></i></button>
+              <a href="{{ exp.booking_url }}" class="btn btn-primary btn-sm">Book</a>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div style="grid-column:1/-1;text-align:center;padding:64px 0;color:var(--text-muted)">
+        <p>No experiences match your filters.</p>
+        <a href="{{ url_for('experiences') }}" class="btn btn-ghost" style="margin-top:16px">Clear Filters</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<button class="scroll-top"><i data-lucide="arrow-up" style="width:18px;height:18px"></i></button>
+{% endblock %}

@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block title %}{{ destination.name }} — SafaraOne{% endblock %}
+
+{% block content %}
+
+<!-- Destination Hero -->
+<div style="position:relative;height:520px;overflow:hidden;margin-top:var(--nav-height)">
+  <img src="{{ destination.image_url }}" alt="{{ destination.name }}"
+       style="width:100%;height:100%;object-fit:cover;filter:brightness(0.45)" />
+  <div style="position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,var(--bg-deep) 100%)"></div>
+  <div style="position:absolute;bottom:0;left:0;right:0;padding:48px" class="container">
+    <div class="section-label"><i data-lucide="map-pin" style="width:14px;height:14px"></i> {{ destination.country }}</div>
+    <h1 class="display-lg" style="margin:10px 0 6px">{{ destination.name }}</h1>
+    <p style="color:var(--amber);font-size:1.1rem;font-weight:600">{{ destination.tagline }}</p>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:16px">
+      <span style="display:flex;align-items:center;gap:5px;font-size:0.85rem;color:rgba(255,255,255,0.65)">
+        <i data-lucide="calendar" style="width:14px;height:14px"></i> Best: {{ destination.best_months }}
+      </span>
+      <span style="display:flex;align-items:center;gap:5px;font-size:0.85rem;color:rgba(255,255,255,0.65)">
+        <i data-lucide="dollar-sign" style="width:14px;height:14px"></i> ~${{ destination.average_daily_budget_usd }}/day avg budget
+      </span>
+      <span style="display:flex;align-items:center;gap:5px;font-size:0.85rem;color:rgba(255,255,255,0.65)">
+        <i data-lucide="globe" style="width:14px;height:14px"></i> {{ destination.language }}
+      </span>
+    </div>
+  </div>
+</div>
+
+<section class="section">
+  <div class="container">
+    <!-- Quick stats + description -->
+    <div style="display:grid;grid-template-columns:1fr 320px;gap:48px;margin-bottom:64px">
+      <div>
+        <h2 class="display-sm mb-16">About {{ destination.name }}</h2>
+        <p style="color:var(--text-secondary);line-height:1.8;font-size:1rem">{{ destination.description }}</p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:24px">
+          {% for h in destination.highlights %}
+          <span style="padding:6px 14px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.2);border-radius:99px;font-size:0.82rem;color:var(--amber)">
+            ✦ {{ h }}
+          </span>
+          {% endfor %}
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:start">
+        {% set stat_items = [
+          (destination.stats.hotels, "Stays", "bed-double", "amber"),
+          (destination.stats.experiences, "Experiences", "zap", "ocean"),
+          (destination.stats.guides, "Local Guides", "user-check", "purple"),
+          ("24/7", "Support", "headphones", "green"),
+        ] %}
+        {% for val, label, icon, color in stat_items %}
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;text-align:center">
+          <div style="font-family:'Outfit',sans-serif;font-weight:900;font-size:1.8rem;color:var(--amber)">{{ val }}</div>
+          <div style="font-size:0.78rem;color:var(--text-muted);margin-top:4px">{{ label }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Tabs: Stays / Experiences / Guides -->
+    <div style="display:flex;gap:4px;background:rgba(255,255,255,0.04);border-radius:99px;padding:4px;width:fit-content;margin-bottom:40px" id="detail-tabs">
+      {% for tab, label, icon in [("stays","Stays","bed-double"),("experiences","Experiences","zap"),("guides","Guides","user-check")] %}
+      <button onclick="showTab('{{ tab }}')" id="tab-{{ tab }}"
+              class="filter-pill {% if loop.first %}active{% endif %}"
+              style="display:flex;align-items:center;gap:6px;padding:8px 20px">
+        <i data-lucide="{{ icon }}" style="width:14px;height:14px"></i> {{ label }}
+      </button>
+      {% endfor %}
+    </div>
+
+    <!-- Stays -->
+    <div id="panel-stays">
+      <div class="grid-3">
+        {% for stay in stays %}
+        <div class="card stay-card">
+          <div class="stay-card-img card-img-wrap">
+            <img src="{{ stay.image_url }}" alt="{{ stay.name }}" class="card-img" loading="lazy" />
+            <div class="stay-card-badge">
+              {% if stay.tier == 'luxury' %}<span class="badge badge-luxury">Luxury</span>
+              {% elif stay.tier == 'mid-range' %}<span class="badge badge-mid">Mid-Range</span>
+              {% else %}<span class="badge badge-budget">Budget</span>{% endif %}
+            </div>
+            <div class="stay-price">${{ stay.price_per_night_usd }}<span>/night</span></div>
+          </div>
+          <div class="card-body">
+            <h3 class="card-title">{{ stay.name }}</h3>
+            <p class="card-subtitle">{{ stay.type | title }}</p>
+            <div class="stars mb-8">
+              <span class="star-val">{{ stay.rating }}</span> ★★★★★ <span class="review-count">({{ stay.review_count }})</span>
+            </div>
+            <div class="stay-amenities">
+              {% for a in stay.amenities[:4] %}<span class="amenity-tag">{{ a }}</span>{% endfor %}
+            </div>
+            <div style="display:flex;gap:8px;margin-top:14px">
+              <a href="{{ stay.booking_url }}" class="btn btn-primary btn-sm w-full" style="justify-content:center">Book Now</a>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <p style="color:var(--text-muted);grid-column:1/-1">No accommodations listed yet for this destination.</p>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Experiences -->
+    <div id="panel-experiences" style="display:none">
+      <div class="grid-3">
+        {% for exp in experiences %}
+        <div class="card">
+          <div class="exp-card-img card-img-wrap">
+            <img src="{{ exp.image_url }}" alt="{{ exp.title }}" class="card-img" loading="lazy" />
+            <div class="exp-duration"><i data-lucide="clock" style="width:12px;height:12px;display:inline-block;vertical-align:middle"></i> {{ exp.duration_hours }}h</div>
+          </div>
+          <div class="card-body">
+            <h3 class="card-title">{{ exp.title }}</h3>
+            <p class="card-subtitle">{{ exp.category }}</p>
+            <div class="stars mb-8"><span class="star-val">{{ exp.rating }}</span> ★★★★★ <span class="review-count">({{ exp.review_count }})</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+              <div class="exp-price">${{ exp.price_usd }} <span>/ person</span></div>
+              <a href="{{ exp.booking_url }}" class="btn btn-sm btn-ocean">Book</a>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <p style="color:var(--text-muted);grid-column:1/-1">No experiences listed yet for this destination.</p>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Guides -->
+    <div id="panel-guides" style="display:none">
+      <div class="grid-4">
+        {% for guide in guides %}
+        <div class="card guide-card">
+          <div class="guide-avatar-wrap">
+            <img src="{{ guide.avatar_url }}" alt="{{ guide.name }}" class="guide-avatar" loading="lazy" />
+            {% if guide.is_verified %}<div class="guide-verified">✓</div>{% endif %}
+          </div>
+          <div class="card-body" style="padding-top:0">
+            <h3 class="guide-name">{{ guide.name }}</h3>
+            <p class="guide-title">{{ guide.title }}</p>
+            <div class="guide-specs">{% for s in guide.specializations[:2] %}<span class="spec-chip">{{ s }}</span>{% endfor %}</div>
+            <div class="stars mb-8"><span class="star-val">{{ guide.rating }}</span> ★★★★★ <span class="review-count">({{ guide.total_reviews }})</span></div>
+            <div class="guide-langs">{% for l in guide.languages[:3] %}<span class="lang-tag">{{ l }}</span>{% endfor %}</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px">
+              <span class="guide-price">${{ guide.price_per_day_usd }} <span>/day</span></span>
+              <a href="#" class="btn btn-sm btn-outline">Book</a>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <p style="color:var(--text-muted);grid-column:1/-1">No guides listed yet for this destination.</p>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div style="margin-top:64px;text-align:center;padding:48px;background:linear-gradient(135deg,rgba(245,158,11,0.08),rgba(14,165,233,0.05));border:1px solid rgba(245,158,11,0.15);border-radius:var(--radius-xl)">
+      <h3 style="font-family:'Outfit',sans-serif;font-size:1.6rem;margin-bottom:12px">Ready to Plan Your {{ destination.name }} Trip?</h3>
+      <p style="color:var(--text-secondary);margin-bottom:24px">Let AI build your perfect itinerary within your budget in seconds.</p>
+      <a href="{{ url_for('planner') }}?destination={{ destination.id }}" class="btn btn-primary btn-lg">
+        <i data-lucide="sparkles" style="width:18px;height:18px"></i> Plan with AI — It's Free
+      </a>
+    </div>
+  </div>
+</section>
+
+<button class="scroll-top"><i data-lucide="arrow-up" style="width:18px;height:18px"></i></button>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showTab(name) {
+  ['stays','experiences','guides'].forEach(t => {
+    document.getElementById('panel-' + t).style.display = (t === name) ? 'block' : 'none';
+    document.getElementById('tab-' + t).classList.toggle('active', t === name);
+  });
+}
+</script>
+{% endblock %}

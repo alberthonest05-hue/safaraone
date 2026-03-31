@@ -1,0 +1,392 @@
+{% extends "base.html" %}
+
+{% block title %}SafaraOne — Tanzania's All-in-One Travel Platform{% endblock %}
+
+{% block content %}
+
+<!-- ═══════════════════════════════════════════
+     HERO SECTION
+═══════════════════════════════════════════ -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-overlay"></div>
+
+  <div class="hero-content container">
+    <div class="hero-badge">
+      <i data-lucide="map-pin" style="width:14px;height:14px"></i>
+      Zanzibar · Serengeti · Kilimanjaro
+    </div>
+
+    <h1 class="hero-title">
+      Your Perfect<br/>
+      <span class="text-gradient">Tanzania</span><br/>
+      Adventure Awaits
+    </h1>
+
+    <p class="hero-sub">
+      The only travel platform you need — find stays, book experiences, hire verified guides, 
+      and let AI plan your entire trip within your budget.
+    </p>
+
+    <!-- Search Bar -->
+    <form class="hero-search" id="hero-search-form">
+      <i data-lucide="search" style="width:18px;height:18px;color:var(--amber);margin-left:8px;flex-shrink:0"></i>
+      <select name="destination" style="background:transparent;border:none;outline:none;color:var(--text-primary);font-size:0.95rem;padding:10px 12px;flex:1;">
+        <option value="" style="background:var(--bg-dark)">Where to go?</option>
+        {% for dest in destinations %}
+        <option value="{{ dest.id }}" style="background:var(--bg-dark)">{{ dest.name }}</option>
+        {% endfor %}
+      </select>
+      <div class="search-divider"></div>
+      <select name="type" style="background:transparent;border:none;outline:none;color:var(--text-primary);font-size:0.95rem;padding:10px 12px;width:140px;">
+        <option value="stays" style="background:var(--bg-dark)">🏨 Stays</option>
+        <option value="experiences" style="background:var(--bg-dark)">🎭 Experiences</option>
+        <option value="guides" style="background:var(--bg-dark)">🧭 Guides</option>
+      </select>
+      <button type="submit" class="btn btn-primary" style="border-radius:16px">
+        Search <i data-lucide="arrow-right" style="width:16px;height:16px"></i>
+      </button>
+    </form>
+
+    <div class="hero-actions">
+      <a href="{{ url_for('planner') }}" class="btn btn-lg btn-primary">
+        <i data-lucide="sparkles" style="width:18px;height:18px"></i>
+        Plan with AI
+      </a>
+      <a href="{{ url_for('destinations') }}" class="btn btn-lg btn-ghost">
+        Browse Destinations
+      </a>
+    </div>
+
+    <div class="hero-stats">
+      <div class="hero-stat">
+        <div class="stat-number" data-count="3">0</div>
+        <div class="stat-label">Destinations</div>
+      </div>
+      <div class="hero-stat">
+        <div class="stat-number" data-count="85">0</div>
+        <div class="stat-label">Accommodations</div>
+      </div>
+      <div class="hero-stat">
+        <div class="stat-number" data-count="60">0</div>
+        <div class="stat-label">Experiences</div>
+      </div>
+      <div class="hero-stat">
+        <div class="stat-number" data-count="45">0</div>
+        <div class="stat-label">Verified Guides</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════
+     FEATURE STRIP
+═══════════════════════════════════════════ -->
+<div class="feature-strip">
+  <div class="feature-item">
+    <div class="feature-icon"><i data-lucide="bed-double"></i></div>
+    <div class="feature-title">Curated Stays</div>
+    <div class="feature-desc">Luxury lodges to budget guesthouses — all verified and reviewed.</div>
+  </div>
+  <div class="feature-item">
+    <div class="feature-icon"><i data-lucide="compass"></i></div>
+    <div class="feature-title">Unique Experiences</div>
+    <div class="feature-desc">From spice farm tours to hot air balloon safaris.</div>
+  </div>
+  <div class="feature-item">
+    <div class="feature-icon"><i data-lucide="user-check"></i></div>
+    <div class="feature-title">TTB-Verified Guides</div>
+    <div class="feature-desc">Licensed, background-checked local experts. Speak your language.</div>
+  </div>
+  <div class="feature-item">
+    <div class="feature-icon"><i data-lucide="sparkles"></i></div>
+    <div class="feature-title">AI Budget Planner</div>
+    <div class="feature-desc">Enter your budget. AI builds your perfect itinerary instantly.</div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     DESTINATIONS
+═══════════════════════════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="section-header">
+      <div>
+        <div class="section-label">🌍 Where to Go</div>
+        <h2 class="section-title">Tanzania's Finest <span class="text-gradient">Destinations</span></h2>
+        <p class="section-desc">From the turquoise waters of Zanzibar to the vast savannas of the Serengeti — choose your adventure.</p>
+      </div>
+      <a href="{{ url_for('destinations') }}" class="btn btn-ghost">
+        All Destinations <i data-lucide="arrow-right" style="width:16px;height:16px"></i>
+      </a>
+    </div>
+
+    <div class="grid-3">
+      {% for dest in destinations %}
+      <a href="{{ url_for('destination_detail', dest_id=dest.id) }}" class="dest-card card">
+        <img src="{{ dest.image_url }}" alt="{{ dest.name }}" class="card-img" loading="lazy" />
+        <div class="dest-card-cta">Explore →</div>
+        <div class="dest-card-body">
+          <h3 class="dest-card-title">{{ dest.name }}</h3>
+          <p class="dest-card-tagline">{{ dest.tagline }}</p>
+          <div class="dest-card-meta">
+            <span class="dest-meta-item">
+              <i data-lucide="bed-double" style="width:13px;height:13px"></i>
+              {{ dest.stats.hotels }} stays
+            </span>
+            <span class="dest-meta-item">
+              <i data-lucide="zap" style="width:13px;height:13px"></i>
+              {{ dest.stats.experiences }} experiences
+            </span>
+            <span class="dest-meta-item">
+              <i data-lucide="users" style="width:13px;height:13px"></i>
+              {{ dest.stats.guides }} guides
+            </span>
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════
+     TOP EXPERIENCES
+═══════════════════════════════════════════ -->
+<section class="section" style="background:var(--bg-dark);border-top:1px solid var(--border);border-bottom:1px solid var(--border);">
+  <div class="container">
+    <div class="section-header">
+      <div>
+        <div class="section-label">⚡ Top Picks</div>
+        <h2 class="section-title">Unforgettable <span class="text-gradient">Experiences</span></h2>
+        <p class="section-desc">Handpicked activities — rated by thousands of travelers.</p>
+      </div>
+      <a href="{{ url_for('experiences') }}" class="btn btn-ghost">
+        All Experiences <i data-lucide="arrow-right" style="width:16px;height:16px"></i>
+      </a>
+    </div>
+
+    <div class="grid-3">
+      {% for exp in experiences %}
+      <div class="card">
+        <div class="exp-card-img card-img-wrap">
+          <img src="{{ exp.image_url }}" alt="{{ exp.title }}" class="card-img" loading="lazy" />
+          <div class="exp-duration">
+            <i data-lucide="clock" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:3px"></i>{{ exp.duration_hours }}h
+          </div>
+          <div style="position:absolute;top:12px;left:12px">
+            {% if exp.tier == 'luxury' %}
+            <span class="badge badge-luxury">Luxury</span>
+            {% elif exp.tier == 'mid-range' %}
+            <span class="badge badge-mid">Mid-Range</span>
+            {% else %}
+            <span class="badge badge-budget">Budget</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="card-body">
+          <h3 class="card-title">{{ exp.title }}</h3>
+          <p class="card-subtitle">{{ exp.destination_id | title }} · {{ exp.category }}</p>
+          <div class="stars mb-8">
+            <span class="star-val">{{ exp.rating }}</span>
+            ★★★★★ <span class="review-count">({{ exp.review_count }})</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+            <div class="exp-price">${{ exp.price_usd }} <span>/ person</span></div>
+            <a href="{{ url_for('experiences') }}?destination={{ exp.destination_id }}" class="btn btn-sm btn-ghost">Book</a>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════
+     AI PLANNER PROMO
+═══════════════════════════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div style="background:linear-gradient(135deg,rgba(245,158,11,0.12) 0%,rgba(14,165,233,0.08) 100%);
+                border:1px solid rgba(245,158,11,0.2);border-radius:var(--radius-xl);
+                padding:64px;display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center">
+      <div>
+        <div class="section-label"><i data-lucide="sparkles" style="width:14px;height:14px"></i> Powered by AI</div>
+        <h2 class="section-title" style="margin-top:12px">Your Trip, Planned<br/><span class="text-gradient">In Seconds</span></h2>
+        <p style="color:var(--text-secondary);line-height:1.7;margin:20px 0 32px">
+          Tell us your destination, budget, and travel dates. Our AI optimizer instantly 
+          builds a full itinerary — hotel, activities, guide — maximizing every dollar.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:32px">
+          <div style="display:flex;align-items:center;gap:12px;font-size:0.9rem">
+            <div style="width:32px;height:32px;border-radius:8px;background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center;color:var(--amber);flex-shrink:0">
+              <i data-lucide="dollar-sign" style="width:16px;height:16px"></i>
+            </div>
+            Budget optimization across hotels, experiences & guides
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;font-size:0.9rem">
+            <div style="width:32px;height:32px;border-radius:8px;background:rgba(14,165,233,0.15);display:flex;align-items:center;justify-content:center;color:var(--ocean);flex-shrink:0">
+              <i data-lucide="cloud-sun" style="width:16px;height:16px"></i>
+            </div>
+            Weather-aware activity swaps in real time
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;font-size:0.9rem">
+            <div style="width:32px;height:32px;border-radius:8px;background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center;color:#818CF8;flex-shrink:0">
+              <i data-lucide="users" style="width:16px;height:16px"></i>
+            </div>
+            Solo, couples, families, and group travel modes
+          </div>
+        </div>
+        <a href="{{ url_for('planner') }}" class="btn btn-primary btn-lg">
+          <i data-lucide="sparkles" style="width:18px;height:18px"></i>
+          Try the AI Planner — Free
+        </a>
+      </div>
+      <div style="background:var(--bg-card2);border:1px solid var(--border);border-radius:var(--radius-xl);padding:28px;font-size:0.88rem">
+        <div style="color:var(--text-muted);font-size:0.75rem;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:16px">Sample Output</div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:20px">
+          <div>
+            <div style="font-family:'Outfit',sans-serif;font-weight:800;font-size:1.2rem">Zanzibar · 4 Days</div>
+            <div style="color:var(--text-secondary);font-size:0.8rem">2 travelers · $800 budget</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-family:'Outfit',sans-serif;font-weight:900;font-size:1.5rem;color:var(--amber)">$742</div>
+            <div style="font-size:0.75rem;color:#34D399">$58 saved</div>
+          </div>
+        </div>
+        {% for i in range(4) %}
+        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:8px">
+          <div style="color:var(--amber);font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:10px">Day {{ i+1 }}</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <div style="width:6px;height:6px;background:var(--amber);border-radius:50%"></div>
+            <span style="color:var(--text-secondary)">The Swahili House — mid-range stay</span>
+            <span style="margin-left:auto;color:var(--amber);font-weight:700">$75</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:6px;height:6px;background:var(--ocean);border-radius:50%"></div>
+            <span style="color:var(--text-secondary)">{% if i == 0 %}Stone Town Heritage Tour{% elif i == 1 %}Spice Farm & Cooking Class{% elif i == 2 %}Dolphin & Snorkeling Safari{% else %}Sunset Dhow Cruise{% endif %}</span>
+            <span style="margin-left:auto;color:var(--ocean);font-weight:700">${% if i == 0 %}25{% elif i == 1 %}35{% elif i == 2 %}65{% else %}85{% endif %}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════
+     TOP GUIDES
+═══════════════════════════════════════════ -->
+<section class="section" style="background:var(--bg-dark);border-top:1px solid var(--border)">
+  <div class="container">
+    <div class="section-header">
+      <div>
+        <div class="section-label">🧭 Expert Guides</div>
+        <h2 class="section-title">Meet Tanzania's Best <span class="text-gradient">Local Guides</span></h2>
+        <p class="section-desc">TTB-certified, background-checked, and rated by thousands of happy travelers.</p>
+      </div>
+      <a href="{{ url_for('guides') }}" class="btn btn-ghost">
+        All Guides <i data-lucide="arrow-right" style="width:16px;height:16px"></i>
+      </a>
+    </div>
+
+    <div class="grid-4">
+      {% for guide in guides %}
+      <div class="card guide-card">
+        <div class="guide-avatar-wrap">
+          <img src="{{ guide.avatar_url }}" alt="{{ guide.name }}" class="guide-avatar" loading="lazy" />
+          {% if guide.is_verified %}
+          <div class="guide-verified">✓</div>
+          {% endif %}
+        </div>
+        <div class="card-body" style="padding-top:0">
+          <h3 class="guide-name">{{ guide.name }}</h3>
+          <p class="guide-title">{{ guide.title }}</p>
+          <div class="guide-specs">
+            {% for spec in guide.specializations[:2] %}
+            <span class="spec-chip">{{ spec }}</span>
+            {% endfor %}
+          </div>
+          <div class="stars mb-8">
+            <span class="star-val">{{ guide.rating }}</span>
+            ★★★★★ <span class="review-count">({{ guide.total_reviews }})</span>
+          </div>
+          <div class="guide-langs">
+            {% for lang in guide.languages[:3] %}
+            <span class="lang-tag">{{ lang }}</span>
+            {% endfor %}
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px">
+            <span class="guide-price">${{ guide.price_per_day_usd }} <span>/day</span></span>
+            <a href="{{ url_for('guides') }}?destination={{ guide.destination_id }}" class="btn btn-sm btn-outline">Book</a>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════
+     TESTIMONIALS
+═══════════════════════════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="text-center mb-24">
+      <div class="section-label" style="justify-content:center">💬 Traveler Stories</div>
+      <h2 class="section-title" style="margin-top:12px">Loved by <span class="text-gradient">Thousands</span></h2>
+    </div>
+
+    <div class="testimonials-grid">
+      {% set testimonials = [
+        { "text": "SafaraOne completely transformed our Zanzibar honeymoon. The AI planner suggested experiences we never would have found on our own — the Rock Restaurant sunset dinner was absolutely magical. Booked everything in one place in under 10 minutes.", "name": "Emma & James", "origin": "London, UK", "rating": 5, "destination": "Zanzibar" },
+        { "text": "As a solo female traveler, safety was my priority. The TTB-verified guide Fatuma was incredible — she made me feel completely safe and showed me the real Zanzibar beyond the tourist track. Booking through SafaraOne gave me peace of mind.", "name": "Sofia Andersen", "origin": "Copenhagen, Denmark", "rating": 5, "destination": "Zanzibar" },
+        { "text": "Daniel's safari knowledge blew my mind. He spotted a leopard we would have completely missed and called the river crossing 30 minutes before it happened! The AI budget planner got us into a mid-range lodge within our budget too. Perfect trip.", "name": "Michael Chen", "origin": "Singapore", "rating": 5, "destination": "Serengeti" },
+      ] %}
+      {% for t in testimonials %}
+      <div class="testimonial-card">
+        <div style="color:var(--amber);margin-bottom:12px;font-size:1.1rem">★★★★★</div>
+        <p class="testimonial-text">"{{ t.text }}"</p>
+        <div class="testimonial-author">
+          <div style="width:42px;height:42px;border-radius:50%;background:var(--gradient-amber);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--bg-deep);font-size:0.9rem;">
+            {{ t.name[0] }}
+          </div>
+          <div>
+            <div class="testimonial-name">{{ t.name }}</div>
+            <div class="testimonial-origin">{{ t.origin }} · {{ t.destination }}</div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════
+     PAYMENT METHODS STRIP
+═══════════════════════════════════════════ -->
+<section class="section-sm" style="background:var(--bg-dark);border-top:1px solid var(--border)">
+  <div class="container text-center">
+    <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:20px">Secure payments accepted worldwide</p>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;align-items:center">
+      {% for method in ['Stripe', 'M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Visa', 'Mastercard', 'PayPal'] %}
+      <span style="background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:8px;padding:8px 18px;font-size:0.82rem;font-weight:600;color:var(--text-secondary)">
+        {{ method }}
+      </span>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- Scroll to top -->
+<button class="scroll-top" aria-label="Scroll to top">
+  <i data-lucide="arrow-up" style="width:18px;height:18px"></i>
+</button>
+
+{% endblock %}

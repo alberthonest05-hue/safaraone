@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}SafaraOne — Tanzania Travel Platform{% endblock %}</title>
+  <meta name="description" content="{% block description %}SafaraOne: Tanzania's all-in-one travel platform. Book hotels, discover experiences, hire guides, and plan your perfect trip with AI.{% endblock %}" />
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+  <!-- Main CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
+
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════
+     NAVBAR
+═══════════════════════════════════════════ -->
+<nav class="navbar" id="navbar">
+  <div class="nav-container">
+    <!-- Logo -->
+    <a href="{{ url_for('index') }}" class="nav-logo">
+      <div class="logo-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2L2 7l10 5 10-5-10-5z" fill="currentColor" opacity="0.9"/>
+          <path d="M2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="1.5" fill="none"/>
+        </svg>
+      </div>
+      <span class="logo-text">Safara<span class="logo-accent">One</span></span>
+    </a>
+
+    <!-- Nav Links -->
+    <ul class="nav-links" id="nav-links">
+      <li><a href="{{ url_for('destinations') }}" class="nav-link {% if request.endpoint == 'destinations' %}active{% endif %}">Destinations</a></li>
+      <li><a href="{{ url_for('stays') }}" class="nav-link {% if request.endpoint == 'stays' %}active{% endif %}">Stays</a></li>
+      <li><a href="{{ url_for('experiences') }}" class="nav-link {% if request.endpoint == 'experiences' %}active{% endif %}">Experiences</a></li>
+      <li><a href="{{ url_for('guides') }}" class="nav-link {% if request.endpoint == 'guides' %}active{% endif %}">Guides</a></li>
+      <li><a href="{{ url_for('planner') }}" class="nav-link nav-cta {% if request.endpoint == 'planner' %}active{% endif %}">
+        <i data-lucide="sparkles" style="width:16px;height:16px;"></i> AI Planner
+      </a></li>
+    </ul>
+
+    <!-- Actions -->
+    <div class="nav-actions">
+      <a href="{{ url_for('auth') }}" class="btn btn-ghost">Sign In</a>
+      <a href="{{ url_for('auth') }}" class="btn btn-primary">Get Started</a>
+      <button class="hamburger" id="hamburger" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════
+     MAIN CONTENT
+═══════════════════════════════════════════ -->
+<main>
+  {% block content %}{% endblock %}
+</main>
+
+<!-- ═══════════════════════════════════════════
+     FOOTER
+═══════════════════════════════════════════ -->
+<footer class="footer">
+  <div class="footer-container">
+    <div class="footer-brand">
+      <div class="footer-logo">
+        <div class="logo-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2L2 7l10 5 10-5-10-5z" fill="currentColor" opacity="0.9"/>
+            <path d="M2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="1.5" fill="none"/>
+          </svg>
+        </div>
+        <span class="logo-text">Safara<span class="logo-accent">One</span></span>
+      </div>
+      <p class="footer-tagline">Tanzania's All-in-One Travel Platform.<br>Plan. Book. Experience.</p>
+      <div class="footer-social">
+        <a href="#" class="social-link" aria-label="Instagram"><i data-lucide="instagram"></i></a>
+        <a href="#" class="social-link" aria-label="Twitter"><i data-lucide="twitter"></i></a>
+        <a href="#" class="social-link" aria-label="Facebook"><i data-lucide="facebook"></i></a>
+        <a href="#" class="social-link" aria-label="YouTube"><i data-lucide="youtube"></i></a>
+      </div>
+    </div>
+
+    <div class="footer-links">
+      <div class="footer-col">
+        <h4>Explore</h4>
+        <ul>
+          <li><a href="{{ url_for('destinations') }}">Destinations</a></li>
+          <li><a href="{{ url_for('stays') }}">Accommodations</a></li>
+          <li><a href="{{ url_for('experiences') }}">Experiences</a></li>
+          <li><a href="{{ url_for('guides') }}">Tour Guides</a></li>
+          <li><a href="{{ url_for('planner') }}">AI Trip Planner</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>For Guides</h4>
+        <ul>
+          <li><a href="#">Join as a Guide</a></li>
+          <li><a href="#">TTB Certification</a></li>
+          <li><a href="#">Guide Resources</a></li>
+          <li><a href="#">Payout Info</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Company</h4>
+        <ul>
+          <li><a href="{{ url_for('about') }}">About SafaraOne</a></li>
+          <li><a href="#">Blog</a></li>
+          <li><a href="#">Careers</a></li>
+          <li><a href="#">Press Kit</a></li>
+          <li><a href="#">Contact</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="#">Privacy Policy</a></li>
+          <li><a href="#">Terms of Service</a></li>
+          <li><a href="#">Cookie Policy</a></li>
+          <li><a href="#">PDPA Compliance</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-bottom">
+    <div class="footer-bottom-inner">
+      <p>© 2025 SafaraOne. All rights reserved. Registered in Tanzania (BRELA).</p>
+      <div class="footer-payments">
+        <span class="payment-badge">Stripe</span>
+        <span class="payment-badge">M-Pesa</span>
+        <span class="payment-badge">Airtel Money</span>
+        <span class="payment-badge">Tigo Pesa</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<!-- ═══════════════════════════════════════════
+     SCRIPTS
+═══════════════════════════════════════════ -->
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
