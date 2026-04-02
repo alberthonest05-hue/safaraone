@@ -52,10 +52,16 @@ with app.app_context():
 @app.route("/api/auth/register", methods=["POST"])
 def api_register():
     data = request.get_json()
-    username = data.get("username")
-    email = data.get("email")
-    password = data.get("password")
+    
+    # We use .strip() to accidentally remove any invisible spaces the user might have typed
+    username = data.get("username", "").strip()
+    email = data.get("email", "").strip()
+    password = data.get("password", "")
     role = data.get("role", "tourist")
+
+    # THE FIX: Check if the user forgot to fill out the form!
+    if not username or not email or not password:
+        return jsonify({"error": "Please provide a username, email, and password."}), 400
 
     if User.query.filter_by(email=email).first():
         return jsonify({"error": "Email already registered"}), 400
@@ -75,15 +81,21 @@ def api_register():
 @app.route("/api/auth/login", methods=["POST"])
 def api_login():
     data = request.get_json()
-    username = data.get("username")
-    password = data.get("password")
+    
+    username = data.get("username", "").strip()
+    password = data.get("password", "")
+
+    # THE FIX: Ensure they actually typed something before checking the database
+    if not username or not password:
+        return jsonify({"error": "Please enter both username and password."}), 400
 
     user = User.query.filter_by(username=username).first()
+    
     if not user or not user.check_password(password):
         return jsonify({"error": "Invalid username or password"}), 401
 
     access_token = create_access_token(identity=str(user.id))
-    resp = jsonify({"message": "Login successful", "role": user.role})
+    resp = jsonify({"message": "Login successful", "role": user.role, "username": user.username})
     set_access_cookies(resp, access_token)
     return resp, 200
 

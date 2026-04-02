@@ -118,6 +118,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
                 const data = await response.json();
                 if (response.ok) {
+                    // THE FIX: Save the username in the browser's notebook!
+                    localStorage.setItem('username', data.username);
                     window.location.href = '/';
                 } else {
                     errorBox.textContent = data.error || 'Login failed';
@@ -157,7 +159,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         credentials: 'include',
                         body: JSON.stringify({ username, password })
                     });
+                    
                     if (loginResp.ok) {
+                        const loginData = await loginResp.json();
+                        // THE FIX: Save the username here too!
+                        localStorage.setItem('username', loginData.username);
                         window.location.href = '/';
                     } else {
                         window.location.href = '/auth';

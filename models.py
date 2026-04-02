@@ -14,9 +14,13 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password):
-        self.password_hash = generate_password_hash(password, method='pbkdf2:sha256')
+        # We remove the hardcoded method and let the system use its most modern default scrambler
+        self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
+        # If no password is provided, don't crash, just reject the login
+        if not password:
+            return False
         return check_password_hash(self.password_hash, password)
 
 

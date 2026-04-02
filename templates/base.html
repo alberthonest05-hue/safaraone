@@ -149,6 +149,41 @@
      SCRIPTS
 ═══════════════════════════════════════════ -->
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script>
+  // This runs immediately whenever any page loads
+  document.addEventListener('DOMContentLoaded', function() {
+    // Check the browser's notebook for the username
+    const savedUsername = localStorage.getItem('username');
+    const navActions = document.querySelector('.nav-actions');
+
+    if (savedUsername && navActions) {
+      // If a user is logged in, change the HTML inside the navigation actions area
+      navActions.innerHTML = `
+        <span style="color: var(--amber); font-weight: 600; margin-right: 16px; font-size: 0.95rem;">
+          Welcome, ${savedUsername}
+        </span>
+        <button onclick="logoutUser()" class="btn btn-ghost">Logout</button>
+        <button class="hamburger" id="hamburger" aria-label="Menu">
+          <span></span><span></span><span></span>
+        </button>
+      `;
+    }
+  });
+
+  // This function runs when they click the new Logout button
+  async function logoutUser() {
+    try {
+      // Tell the backend to destroy the VIP wristband (cookie)
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch(e) {
+      console.log("Logout error", e);
+    }
+    // Erase the name from the browser's notebook
+    localStorage.removeItem('username');
+    // Refresh the page so the "Sign In" buttons come back
+    window.location.reload();
+  }
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
