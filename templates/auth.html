@@ -20,20 +20,21 @@
     </div>
 
     <!-- Alert Container -->
-    <div id="auth-error" class="alert alert-error" style="display:none; color: #f87171; background: rgba(239, 68, 68, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 16px; font-size: 0.9rem; border: 1px solid rgba(239, 68, 68, 0.2)"></div>
+    <!-- (Optional: keeping auth-error if needed, but the new script expects login-error/register-error inside the forms) -->
 
     <!-- Login Form -->
     <div id="form-login" class="auth-form-panel">
-      <form onsubmit="handleAuth(event, 'login')">
+      <form id="login-form">
+        <div id="login-error" style="display:none;color:red;margin-bottom:10px;"></div>
         <div class="form-group" style="margin-bottom:16px">
-          <label class="form-label">Email Address</label>
-          <input type="email" id="login-email" class="form-input" placeholder="you@example.com" required autocomplete="username" style="width:100%" />
+          <label class="form-label">Email Address / Username</label>
+          <input type="text" id="login-username" class="form-input" placeholder="you@example.com" required autocomplete="username" style="width:100%" />
         </div>
         <div class="form-group" style="margin-bottom:8px">
           <label class="form-label">Password</label>
           <div style="position:relative">
-            <input type="password" class="form-input" placeholder="••••••••" required id="login-pass" autocomplete="current-password" style="width:100%;padding-right:48px" />
-            <button type="button" onclick="togglePass('login-pass')" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);cursor:pointer">
+            <input type="password" class="form-input" placeholder="••••••••" required id="login-password" autocomplete="current-password" style="width:100%;padding-right:48px" />
+            <button type="button" onclick="togglePass('login-password')" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);cursor:pointer">
               <i data-lucide="eye" style="width:16px;height:16px"></i>
             </button>
           </div>
@@ -49,33 +50,30 @@
 
     <!-- Register Form -->
     <div id="form-register" class="auth-form-panel" style="display:none">
-      <form onsubmit="handleAuth(event, 'register')">
+      <form id="register-form">
+        <div id="register-error" style="display:none;color:red;margin-bottom:10px;"></div>
         <div class="form-grid-2" style="margin-bottom:16px">
           <div class="form-group">
-            <label class="form-label">First Name</label>
-            <input type="text" id="reg-fname" class="form-input" placeholder="Your name" required autocomplete="given-name" />
+            <label class="form-label">Username</label>
+            <input type="text" id="register-username" class="form-input" placeholder="Username" required autocomplete="username" />
           </div>
           <div class="form-group">
-            <label class="form-label">Last Name</label>
-            <input type="text" id="reg-lname" class="form-input" placeholder="Your surname" required autocomplete="family-name" />
+            <label class="form-label">Email Address</label>
+            <input type="email" id="register-email" class="form-input" placeholder="you@example.com" required autocomplete="email" />
           </div>
-        </div>
-        <div class="form-group" style="margin-bottom:16px">
-          <label class="form-label">Email Address</label>
-          <input type="email" id="reg-email" class="form-input" placeholder="you@example.com" required autocomplete="email" style="width:100%" />
         </div>
         <div class="form-group" style="margin-bottom:16px">
           <label class="form-label">Account Type</label>
-          <select id="reg-role" class="form-select" style="width:100%">
-            <option value="traveler">🧳 Traveler (book trips)</option>
-            <option value="guide">🧭 Tour Guide (earn money)</option>
-          </select>
+          <div style="display: flex; gap: 16px;">
+            <label><input type="radio" name="role" value="tourist" checked> 🧳 Traveler</label>
+            <label><input type="radio" name="role" value="guide"> 🧭 Tour Guide</label>
+          </div>
         </div>
         <div class="form-group" style="margin-bottom:24px">
           <label class="form-label">Password</label>
           <div style="position:relative">
-            <input type="password" class="form-input" placeholder="Min. 8 characters" required id="reg-pass" autocomplete="new-password" style="width:100%;padding-right:48px" />
-            <button type="button" onclick="togglePass('reg-pass')" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);cursor:pointer">
+            <input type="password" class="form-input" placeholder="Min. 8 characters" required id="register-password" autocomplete="new-password" style="width:100%;padding-right:48px" />
+            <button type="button" onclick="togglePass('register-password')" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);cursor:pointer">
               <i data-lucide="eye" style="width:16px;height:16px"></i>
             </button>
           </div>
@@ -98,79 +96,82 @@ function togglePass(id) {
   const inp = document.getElementById(id);
   inp.type = inp.type === 'password' ? 'text' : 'password';
 }
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
 
-function showError(msg) {
-  const errDiv = document.getElementById('auth-error');
-  errDiv.textContent = msg;
-  errDiv.style.display = 'block';
-}
+    // LOGIN FORM
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) {
+        loginForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const username = document.getElementById('login-username').value.trim();
+            const password = document.getElementById('login-password').value;
+            const errorBox = document.getElementById('login-error');
 
-async function handleAuth(e, type) {
-  e.preventDefault();
-  const errDiv = document.getElementById('auth-error');
-  errDiv.style.display = 'none';
-
-  let url = '';
-  let payload = {};
-
-  if (type === 'login') {
-    url = '/api/auth/login';
-    // Send email as the username string since backend login expects username
-    payload = {
-      username: document.getElementById('login-email').value,
-      password: document.getElementById('login-pass').value
-    };
-  } else {
-    url = '/api/auth/register';
-    const roleValue = document.getElementById('reg-role').value;
-    payload = {
-      // Storing email as username so login check succeeds later
-      username: document.getElementById('reg-email').value,
-      email: document.getElementById('reg-email').value,
-      password: document.getElementById('reg-pass').value,
-      role: roleValue === 'traveler' ? 'tourist' : 'guide'
-    };
-  }
-
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    
-    const data = await res.json();
-    
-    if (!res.ok) {
-      showError(data.error || 'Authentication failed. Please check your credentials.');
-      return;
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    window.location.href = '/';
+                } else {
+                    errorBox.textContent = data.error || 'Login failed';
+                    errorBox.style.display = 'block';
+                }
+            } catch (err) {
+                errorBox.textContent = 'Network error. Please try again.';
+                errorBox.style.display = 'block';
+            }
+        });
     }
 
-    if (type === 'register') {
-      // Login automatically upon successful registration
-      const loginRes = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: payload.username,
-          password: payload.password
-        })
-      });
-      
-      if (!loginRes.ok) {
-        showError('Registration successful. Please switch to the Sign In tab to log into your new account.');
-        return;
-      }
+    // REGISTER FORM
+    const registerForm = document.getElementById('register-form');
+    if (registerForm) {
+        registerForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const username = document.getElementById('register-username').value.trim();
+            const email = document.getElementById('register-email').value.trim();
+            const password = document.getElementById('register-password').value;
+            const role = document.querySelector('input[name="role"]:checked')?.value || 'tourist';
+            const errorBox = document.getElementById('register-error');
+
+            try {
+                const response = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ username, email, password, role })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    // Auto login after register
+                    const loginResp = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ username, password })
+                    });
+                    if (loginResp.ok) {
+                        window.location.href = '/';
+                    } else {
+                        window.location.href = '/auth';
+                    }
+                } else {
+                    errorBox.textContent = data.error || 'Registration failed';
+                    errorBox.style.display = 'block';
+                }
+            } catch (err) {
+                errorBox.textContent = 'Network error. Please try again.';
+                errorBox.style.display = 'block';
+            }
+        });
     }
-
-    // Since our backend sets the JWT HttpOnly cookies automatically, we don't need to manually 
-    // inject tokens into localStorage. We can just safely navigate to the homepage.
-    window.location.href = '/';
-
-  } catch (err) {
-    console.error('Network request failed:', err);
-    showError('Network error connecting to the server. Please try again.');
-  }
-}
+});
 </script>
 {% endblock %}
