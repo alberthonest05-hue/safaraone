@@ -118,10 +118,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
                 const data = await response.json();
                 if (response.ok) {
-                    // THE FIX: Save the username in the browser's notebook!
+                    // THE FIX: Save user info and redirect based on role
                     localStorage.setItem('username', data.username);
                     localStorage.setItem('role', data.role);
-                    window.location.href = '/';
+                    
+                    if (data.role === 'admin') {
+                        window.location.href = '/admin';
+                    } else if (data.role === 'guide') {
+                        window.location.href = '/dashboard';
+                    } else {
+                        window.location.href = '/';
+                    }
                 } else {
                     errorBox.textContent = data.error || 'Login failed';
                     errorBox.style.display = 'block';
@@ -163,10 +170,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     if (loginResp.ok) {
                         const loginData = await loginResp.json();
-                        // THE FIX: Save the username here too!
+                        // THE FIX: Save user info and redirect based on role
                         localStorage.setItem('username', loginData.username);
                         localStorage.setItem('role', loginData.role);
-                        window.location.href = '/';
+                        
+                        if (loginData.role === 'admin') {
+                            window.location.href = '/admin';
+                        } else if (loginData.role === 'guide') {
+                            window.location.href = '/dashboard';
+                        } else {
+                            window.location.href = '/';
+                        }
                     } else {
                         window.location.href = '/auth';
                     }
