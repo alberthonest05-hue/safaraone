@@ -388,6 +388,10 @@ def api_guides_me():
         if "title" in data: guide.title = data["title"]
         if "price_per_day_usd" in data: guide.price_per_day_usd = float(data["price_per_day_usd"])
         if "availability" in data: guide.availability = data["availability"]
+        if "destination_id" in data: guide.destination_id = data["destination_id"]
+        if "specializations" in data: guide.specializations = data["specializations"]
+        if "languages" in data: guide.languages = data["languages"]
+        if "image_url" in data: guide.avatar_url = data["image_url"]  # avatar_url is the model field
         db.session.commit()
         return jsonify({"message": "Profile updated", "guide": guide.to_dict()})
 
@@ -763,10 +767,10 @@ def guide_dashboard():
     if user.role != 'guide':
         return redirect(url_for('index'))
     guide = Guide.query.filter_by(user_id=user_id).first()
-    # If guide has no profile or incomplete profile, show credentials form
+    # If guide has no profile or incomplete profile, show boarding form
     if not guide or not guide.bio or not guide.price_per_day_usd:
         destinations = [d.to_dict() for d in Destination.query.all()]
-        return render_template('guide_credentials.html', destinations=destinations)
+        return render_template('guide_onboarding.html', destinations=destinations)
     # Full dashboard
     bookings = Booking.query.filter_by(item_type='guide', item_id=guide.id).all()
     total_earnings = sum(b.amount_usd * 0.8 for b in bookings if b.status == 'completed')

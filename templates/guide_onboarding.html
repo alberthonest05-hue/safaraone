@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Complete Your Guide Profile — SafaraOne{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 800px; margin-top: 60px; margin-bottom: 60px;">
+    <div class="auth-card" style="width: 100%; border: 1px solid var(--border); background: rgba(255,255,255,0.02);">
+        <div style="text-align:center;margin-bottom:40px">
+            <div class="section-label" style="justify-content:center;margin-bottom:12px">Step 3: Verification</div>
+            <h1 class="display-sm mb-12">Complete Your <span class="text-gradient">Professional</span> Profile</h1>
+            <p class="text-muted">High-quality profiles earn 3x more bookings on SafaraOne.</p>
+        </div>
+
+        <form id="onboarding-form">
+            <div id="form-error" style="display:none;color:#f87171;background:rgba(248,113,113,0.1);padding:12px;border-radius:12px;margin-bottom:24px;font-size:0.9rem;"></div>
+
+            <!-- Profile Photo -->
+            <div class="form-group mb-24">
+                <label class="form-label">Profile Photo URL</label>
+                <input type="url" id="image_url" class="form-input" placeholder="https://images.unsplash.com/..." required />
+                <p style="font-size:0.75rem;color:var(--text-muted);margin-top:6px">Use a clear headshot to build trust with travelers.</p>
+            </div>
+
+            <div class="grid-2 mb-24" style="gap:24px">
+                <!-- Rate -->
+                <div class="form-group">
+                    <label class="form-label">Daily Rate (USD)</label>
+                    <div style="position:relative">
+                        <span style="position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--amber);">$</span>
+                        <input type="number" id="price_per_day_usd" class="form-input" placeholder="150" style="padding-left:32px" required />
+                    </div>
+                </div>
+                <!-- Destination -->
+                <div class="form-group">
+                    <label class="form-label">Operating Destination</label>
+                    <select id="destination_id" class="form-input" required>
+                        <option value="" disabled selected>Select a region...</option>
+                        {% for dest in destinations %}
+                        <option value="{{ dest.id }}">{{ dest.name }}</option>
+                        {% endfor %}
+                        <option value="zanzibar">Zanzibar</option>
+                        <option value="serengeti">Serengeti</option>
+                        <option value="kilimanjaro">Mount Kilimanjaro</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Bio -->
+            <div class="form-group mb-24">
+                <label class="form-label">Professional Bio / About Yourself</label>
+                <textarea id="bio" class="form-input" style="min-height:140px;padding:16px;line-height:1.6" placeholder="Describe your experience, local knowledge, and personality..." required></textarea>
+            </div>
+
+            <!-- Languages -->
+            <div class="form-group mb-24">
+                <label class="form-label">Languages Spoken</label>
+                <input type="text" id="languages" class="form-input" placeholder="e.g. Swahili, English, French" required />
+                <p style="font-size:0.75rem;color:var(--text-muted);margin-top:6px">Separate languages with commas.</p>
+            </div>
+
+            <!-- Specializations -->
+            <div class="form-group mb-32">
+                <label class="form-label">Your Specializations</label>
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:12px">
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;background:rgba(255,255,255,0.05);padding:12px;border-radius:12px;border:1px solid var(--border)">
+                        <input type="checkbox" name="spec" value="Safari" style="accent-color:var(--amber)">
+                        <span>🦁 Safari</span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;background:rgba(255,255,255,0.05);padding:12px;border-radius:12px;border:1px solid var(--border)">
+                        <input type="checkbox" name="spec" value="Cultural" style="accent-color:var(--amber)">
+                        <span>🏺 Cultural</span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;background:rgba(255,255,255,0.05);padding:12px;border-radius:12px;border:1px solid var(--border)">
+                        <input type="checkbox" name="spec" value="Mountain Climbing" style="accent-color:var(--amber)">
+                        <span>⛰️ Mountain Climbing</span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;background:rgba(255,255,255,0.05);padding:12px;border-radius:12px;border:1px solid var(--border)">
+                        <input type="checkbox" name="spec" value="Diving" style="accent-color:var(--amber)">
+                        <span>🌊 Diving</span>
+                    </label>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary w-full btn-lg" style="justify-content:center;height:56px;font-size:1.1rem">
+                Activate My Guide Profile <i data-lucide="check-circle" style="width:20px;height:20px;margin-left:8px"></i>
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const onboardingForm = document.getElementById('onboarding-form');
+    if (onboardingForm) {
+        onboardingForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const errorBox = document.getElementById('form-error');
+            errorBox.style.display = 'none';
+
+            // Collect selected specializations
+            const specs = Array.from(document.querySelectorAll('input[name="spec"]:checked')).map(cb => cb.value);
+            
+            if (specs.length === 0) {
+                errorBox.textContent = "Please select at least one specialization.";
+                errorBox.style.display = 'block';
+                return;
+            }
+
+            const payload = {
+                image_url: document.getElementById('image_url').value.trim(),
+                price_per_day_usd: document.getElementById('price_per_day_usd').value,
+                destination_id: document.getElementById('destination_id').value,
+                bio: document.getElementById('bio').value.trim(),
+                languages: document.getElementById('languages').value.split(',').map(l => l.trim()),
+                specializations: specs
+            };
+
+            try {
+                const response = await fetch('/api/guides/me', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (response.ok) {
+                    // Step 3 Completion Redirect
+                    window.location.reload(); 
+                } else {
+                    const data = await response.json();
+                    errorBox.textContent = data.error || 'Update failed. Please check your inputs.';
+                    errorBox.style.display = 'block';
+                }
+            } catch (err) {
+                errorBox.textContent = 'Server error. Please try again.';
+                errorBox.style.display = 'block';
+            }
+        });
+    }
+});
+</script>
+{% endblock %}
