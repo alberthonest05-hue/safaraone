@@ -9,9 +9,10 @@ def seed():
         # Create all tables safely (ignores if they exist)
         db.create_all()
 
-        # THE FIX: Safety check - only seed if the database is empty!
-        if User.query.first():
-            print("Database already populated. Skipping seed.")
+        # THE FIX: Safety check - only seed if the marketplace is empty!
+        # We check for Destinations because that is what fills the main site pages.
+        if Destination.query.first():
+            print("Marketplace data already exists. Skipping seed to prevent duplicates.")
             return
 
         try:
