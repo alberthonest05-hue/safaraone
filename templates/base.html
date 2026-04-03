@@ -152,13 +152,21 @@
 <script>
   // This runs immediately whenever any page loads
   document.addEventListener('DOMContentLoaded', function() {
-    // Check the browser's notebook for the username
+    // Check the browser's notebook for the username and role
     const savedUsername = localStorage.getItem('username');
+    const savedRole = localStorage.getItem('role');
     const navActions = document.querySelector('.nav-actions');
 
     if (savedUsername && navActions) {
+      let becomeGuideHtml = '';
+      if (savedRole === 'tourist') {
+          // Add the "Become a Guide" link for tourists
+          becomeGuideHtml = `<a href="/register-guide" class="btn btn-ghost" style="color:var(--amber); border: 1px solid var(--amber);">Become a Guide</a>`;
+      }
+
       // If a user is logged in, change the HTML inside the navigation actions area
       navActions.innerHTML = `
+        ${becomeGuideHtml}
         <span style="color: var(--amber); font-weight: 600; margin-right: 16px; font-size: 0.95rem;">
           Welcome, ${savedUsername}
         </span>
@@ -178,8 +186,9 @@
     } catch(e) {
       console.log("Logout error", e);
     }
-    // Erase the name from the browser's notebook
+    // Erase the name and role from the browser's notebook
     localStorage.removeItem('username');
+    localStorage.removeItem('role');
     // Refresh the page so the "Sign In" buttons come back
     window.location.reload();
   }

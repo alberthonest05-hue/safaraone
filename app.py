@@ -581,6 +581,75 @@ def api_post_review():
         db.session.rollback()
         return jsonify({"error": "You have already reviewed this item"}), 400
 
+# ─────────────────────────────────────────────
+#  PHASE 2B: GUIDE REGISTRATION ROUTES
+# ─────────────────────────────────────────────
+
+@app.route("/register-guide")
+@jwt_required(optional=True)
+def register_guide_page():
+    # Fix 1: Properly catch unauthorized users without a JSON crash
+    user_id = get_jwt_identity()
+    if not user_id:
+        return redirect(url_for('auth'))
+        
+    destinations = Destination.query.all()
+    return render_template("register_guide.html", destinations=destinations)
+
+
+@app.route("/api/guides/register", methods=["POST"])
+@jwt_required()
+def api_guide_register():
+    user_id = int(get_jwt_identity())
+    
+    # Fix 4: Safely query the database, avoiding SQLAlchemy 2.0 specific syntax
+    user = User.query.get(user_id)
+    
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+        
+    # Check if they are already a guide
+    existing_guide = Guide.query.filter_by(user_id=user_id).first()
+    if existing_guide:
+        return jsonify({"error": "You are already registered as a guide"}), 400
+
+    data = request.get_json()
+    
+    # Validation
+    name = data.get("name")
+    specialization = data.get("specialization")
+    bio = data.get("bio")
+    price = data.get("price_per_day_usd")
+    dest_id = data.get("destination_id")
+
+    if not all([name, specialization, bio, price, dest_id]):
+        return jsonify({"error": "All fields are required"}), 400
+
+    try:
+        # 1. Create the Guide profile
+        new_guide = Guide(
+            user_id=user_id,
+            name=name,
+            specialization=specialization,
+            bio=bio,
+            price_per_day_usd=float(price),
+            destination_id=str(dest_id),
+            # Set a default avatar for now
+            image_url="https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=400"
+        )
+        
+        # 2. Update the User role to 'guide'
+        user.role = "guide"
+        
+        db.session.add(new_guide)
+        db.session.commit()
+        
+        return jsonify({"message": "Guide profile created successfully!"}), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5050)

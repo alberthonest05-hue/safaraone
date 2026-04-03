@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="max-width: 42rem; margin: 2.5rem auto; padding: 2rem; background: rgba(255,255,255,0.1); backdrop-filter: blur(12px); border-radius: 1rem; border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);">
+    <h2 style="font-size: 1.875rem; line-height: 2.25rem; font-weight: 700; color: white; margin-bottom: 1.5rem;">Become a SafaraOne Guide</h2>
+    <p style="color: #d1d5db; margin-bottom: 2rem;">Share your Tanzanian expertise and start earning in USD.</p>
+
+    <form id="guide-reg-form" style="display: flex; flex-direction: column; gap: 1.5rem;">
+        <div>
+            <label style="display: block; font-size: 0.875rem; font-weight: 500; color: #d1d5db;">Display Name / Company Name</label>
+            <input type="text" id="guide-name" required style="width: 100%; margin-top: 0.25rem; padding: 0.75rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 0.5rem; color: white; outline: none;">
+        </div>
+
+        <div>
+            <label style="display: block; font-size: 0.875rem; font-weight: 500; color: #d1d5db;">Base Destination</label>
+            <select id="guide-dest" required style="width: 100%; margin-top: 0.25rem; padding: 0.75rem; background: #1f2937; border: 1px solid rgba(255,255,255,0.1); border-radius: 0.5rem; color: white; outline: none;">
+                {% for dest in destinations %}
+                <option value="{{ dest.id }}">{{ dest.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div>
+            <label style="display: block; font-size: 0.875rem; font-weight: 500; color: #d1d5db;">Primary Specialization</label>
+            <select id="guide-spec" required style="width: 100%; margin-top: 0.25rem; padding: 0.75rem; background: #1f2937; border: 1px solid rgba(255,255,255,0.1); border-radius: 0.5rem; color: white; outline: none;">
+                <option value="Safari">Safari / Wildlife</option>
+                <option value="Mountain">Mountain Climbing (Kilimanjaro/Meru)</option>
+                <option value="Culture">Cultural & Historical Tours</option>
+                <option value="Water">Water Sports & Snorkeling</option>
+            </select>
+        </div>
+
+        <div>
+            <label style="display: block; font-size: 0.875rem; font-weight: 500; color: #d1d5db;">Daily Rate ($USD)</label>
+            <input type="number" id="guide-price" placeholder="e.g. 50" required style="width: 100%; margin-top: 0.25rem; padding: 0.75rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 0.5rem; color: white; outline: none;">
+        </div>
+
+        <div>
+            <label style="display: block; font-size: 0.875rem; font-weight: 500; color: #d1d5db;">Your Bio (Tell your story)</label>
+            <textarea id="guide-bio" rows="4" required style="width: 100%; margin-top: 0.25rem; padding: 0.75rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 0.5rem; color: white; outline: none;"></textarea>
+        </div>
+
+        <div id="reg-error" style="display: none; color: #f87171; font-size: 0.875rem; background: rgba(127,29,29,0.2); padding: 0.75rem; border-radius: 0.5rem;"></div>
+
+        <button type="submit" class="btn btn-primary w-full btn-lg" style="justify-content: center; margin-top: 10px;">
+            Submit Application
+        </button>
+    </form>
+</div>
+
+{% block scripts %}
+<script>
+document.getElementById('guide-reg-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById('reg-error');
+    
+    const payload = {
+        name: document.getElementById('guide-name').value,
+        destination_id: document.getElementById('guide-dest').value,
+        specialization: document.getElementById('guide-spec').value,
+        price_per_day_usd: document.getElementById('guide-price').value,
+        bio: document.getElementById('guide-bio').value
+    };
+
+    try {
+        const response = await fetch('/api/guides/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        
+        if (response.ok) {
+            alert('Congratulations! You are now a SafaraOne Guide.');
+            // THE FIX: Sync the frontend role so the "Become a Guide" button vanishes!
+            localStorage.setItem('role', 'guide');
+            window.location.href = '/';
+        } else {
+            errorBox.textContent = data.error;
+            errorBox.style.display = 'block';
+        }
+    } catch (err) {
+        errorBox.textContent = "Server error. Please try again later.";
+        errorBox.style.display = 'block';
+    }
+});
+</script>
+{% endblock %}
+{% endblock %}
