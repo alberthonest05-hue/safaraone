@@ -643,25 +643,31 @@ def api_guide_register():
     
     # Validation
     name = data.get("name")
-    specialization = data.get("specialization")
     bio = data.get("bio")
     price = data.get("price_per_day_usd")
     dest_id = data.get("destination_id")
+    specializations = data.get("specializations", [])
+    languages = data.get("languages", [])
+    image_url = data.get("image_url", "https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?w=800")
+    
+    # We allow specialization as a string for backward compat if needed, but the form sends a list
+    spec_str = specialization if isinstance(data.get("specialization"), str) else ", ".join(specializations)
 
-    if not all([name, specialization, bio, price, dest_id]):
-        return jsonify({"error": "All fields are required"}), 400
+    if not all([name, bio, price, dest_id]):
+        return jsonify({"error": "Missing required fields (name, bio, rate, destination)"}), 400
 
     try:
         # 1. Create the Guide profile
         new_guide = Guide(
             user_id=user_id,
             name=name,
-            specialization=specialization,
+            specialization=spec_str,
             bio=bio,
             price_per_day_usd=float(price),
             destination_id=str(dest_id),
-            # Set a default avatar for now
-            image_url="https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=400"
+            languages=languages,
+            specializations=specializations,
+            avatar_url=image_url
         )
         
         # 2. Update the User role to 'guide'
@@ -767,10 +773,10 @@ def guide_dashboard():
     if user.role != 'guide':
         return redirect(url_for('index'))
     guide = Guide.query.filter_by(user_id=user_id).first()
-    # If guide has no profile or incomplete profile, show boarding form
+    # If guide has no profile or incomplete profile, show credentials form
     if not guide or not guide.bio or not guide.price_per_day_usd:
         destinations = [d.to_dict() for d in Destination.query.all()]
-        return render_template('guide_onboarding.html', destinations=destinations)
+        return render_template('guide_credentials.html', destinations=destinations)
     # Full dashboard
     bookings = Booking.query.filter_by(item_type='guide', item_id=guide.id).all()
     total_earnings = sum(b.amount_usd * 0.8 for b in bookings if b.status == 'completed')
