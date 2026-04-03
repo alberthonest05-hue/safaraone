@@ -45,6 +45,43 @@ app.config["JWT_COOKIE_CSRF_PROTECT"] = False # Simplify for dev
 db.init_app(app)
 jwt = JWTManager(app)
 
+@jwt.unauthorized_loader
+def unauthorized_callback(reason):
+    if request.path.startswith('/api/'):
+        return jsonify({"error": "Authentication required", "reason": reason}), 401
+    return redirect(url_for('auth'))
+
+@jwt.expired_token_loader
+def expired_token_callback(jwt_header, jwt_payload):
+    if request.path.startswith('/api/'):
+        return jsonify({"error": "Token expired, please log in again"}), 401
+    return redirect(url_for('auth'))
+
+@jwt.invalid_token_loader
+def invalid_token_callback(reason):
+    if request.path.startswith('/api/'):
+        return jsonify({"error": "Invalid token", "reason": reason}), 401
+    return redirect(url_for('auth'))
+
+@app.context_processor
+def inject_user():
+    try:
+        from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity
+        verify_jwt_in_request(optional=True)
+        user_id = get_jwt_identity()
+        if user_id:
+            user = db.session.get(User, int(user_id))
+            if user:
+                return {
+                    "current_user_role": user.role,
+                    "current_user_name": user.username,
+                    "current_user_id": user.id
+                }
+    except:
+        pass
+    return {"current_user_role": None, "current_user_name": None, "current_user_id": None}
+
+
 with app.app_context():
     db.create_all()
 
@@ -55,31 +92,35 @@ with app.app_context():
 
 @app.route("/api/auth/register", methods=["POST"])
 def api_register():
-    data = request.get_json()
-    
-    # We use .strip() to accidentally remove any invisible spaces the user might have typed
-    username = data.get("username", "").strip()
-    email = data.get("email", "").strip()
-    password = data.get("password", "")
-    role = data.get("role", "tourist")
+    try:
+        data = request.get_json()
+        
+        # We use .strip() to accidentally remove any invisible spaces the user might have typed
+        username = data.get("username", "").strip()
+        email = data.get("email", "").strip()
+        password = data.get("password", "")
+        role = data.get("role", "tourist")
 
-    # THE FIX: Check if the user forgot to fill out the form!
-    if not username or not email or not password:
-        return jsonify({"error": "Please provide a username, email, and password."}), 400
+        # THE FIX: Check if the user forgot to fill out the form!
+        if not username or not email or not password:
+            return jsonify({"error": "Please provide a username, email, and password."}), 400
 
-    if User.query.filter_by(username=username).first():
-        return jsonify({"error": "Username already taken"}), 400
+        if User.query.filter_by(username=username).first():
+            return jsonify({"error": "Username already taken"}), 400
 
-    new_user = User(username=username, email=email, role=role)
-    new_user.set_password(password)
-    
-    db.session.add(new_user)
-    db.session.commit()
+        new_user = User(username=username, email=email, role=role)
+        new_user.set_password(password)
+        
+        db.session.add(new_user)
+        db.session.commit()
 
-    access_token = create_access_token(identity=str(new_user.id))
-    resp = jsonify({"message": "User registered successfully", "user_id": new_user.id, "username": new_user.username, "role": new_user.role})
-    set_access_cookies(resp, access_token)
-    return resp, 201
+        access_token = create_access_token(identity=str(new_user.id))
+        resp = jsonify({"message": "User registered successfully", "user_id": new_user.id, "username": new_user.username, "role": new_user.role})
+        set_access_cookies(resp, access_token)
+        return resp, 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Registration failed: {str(e)}"}), 500
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -116,16 +157,27 @@ def api_logout():
 # ─────────────────────────────────────────────
 
 @app.route("/")
+@jwt_required(optional=True)
 def index():
-    """Landing page."""
     featured = [d.to_dict() for d in Destination.query.limit(3).all()]
     top_experiences = [e.to_dict() for e in Experience.query.limit(6).all()]
     top_guides = [g.to_dict() for g in Guide.query.limit(4).all()]
+    
+    pending_count = 0
+    user_id = get_jwt_identity()
+    if user_id:
+        user = db.session.get(User, int(user_id))
+        if user and user.role == 'guide':
+            guide = Guide.query.filter_by(user_id=user.id).first()
+            if guide:
+                pending_count = Booking.query.filter_by(item_type='guide', item_id=guide.id, status='confirmed').count()
+
     return render_template(
         "index.html",
         destinations=featured,
         experiences=top_experiences,
         guides=top_guides,
+        pending_count=pending_count
     )
 
 
@@ -692,14 +744,26 @@ def api_make_admin():
 @jwt_required()
 def guide_dashboard():
     user_id = int(get_jwt_identity())
-    user = User.query.get(user_id)
-    if not user or user.role != "guide":
-        return redirect(url_for("index"))
-    
+    user = db.session.get(User, user_id)
+    if not user:
+        return redirect(url_for('auth'))
+    if user.role != 'guide':
+        return redirect(url_for('index'))
     guide = Guide.query.filter_by(user_id=user_id).first()
-    bookings = Booking.query.filter_by(item_type="guide", item_id=str(guide.id)).all() if guide else []
-    
-    return render_template("guide_dashboard.html", guide=guide, bookings=bookings)
+    # If guide has no profile or incomplete profile, show credentials form
+    if not guide or not guide.bio or not guide.price_per_day_usd:
+        destinations = [d.to_dict() for d in Destination.query.all()]
+        return render_template('guide_credentials.html', destinations=destinations)
+    # Full dashboard
+    bookings = Booking.query.filter_by(item_type='guide', item_id=guide.id).all()
+    total_earnings = sum(b.amount_usd * 0.8 for b in bookings if b.status == 'completed')
+    pending = [b for b in bookings if b.status == 'confirmed']
+    return render_template('guide_dashboard.html',
+        guide=guide.to_dict(),
+        bookings=bookings,
+        total_earnings=round(total_earnings, 2),
+        pending_bookings=pending
+    )
 
 
 if __name__ == "__main__":

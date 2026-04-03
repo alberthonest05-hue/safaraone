@@ -39,19 +39,38 @@
 
     <!-- Nav Links -->
     <ul class="nav-links" id="nav-links">
-      <li><a href="{{ url_for('destinations') }}" class="nav-link {% if request.endpoint == 'destinations' %}active{% endif %}">Destinations</a></li>
-      <li><a href="{{ url_for('stays') }}" class="nav-link {% if request.endpoint == 'stays' %}active{% endif %}">Stays</a></li>
-      <li><a href="{{ url_for('experiences') }}" class="nav-link {% if request.endpoint == 'experiences' %}active{% endif %}">Experiences</a></li>
-      <li><a href="{{ url_for('guides') }}" class="nav-link {% if request.endpoint == 'guides' %}active{% endif %}">Guides</a></li>
-      <li><a href="{{ url_for('planner') }}" class="nav-link nav-cta {% if request.endpoint == 'planner' %}active{% endif %}">
-        <i data-lucide="sparkles" style="width:16px;height:16px;"></i> AI Planner
-      </a></li>
+      {% if current_user_role == 'guide' %}
+        <li><a href="/dashboard" class="nav-link">My Dashboard</a></li>
+        <li><a href="/dashboard/bookings" class="nav-link">Active Bookings</a></li>
+        <li><a href="/api/guides/me" class="nav-link">Edit Profile</a></li>
+      {% elif current_user_role == 'admin' %}
+        <li><a href="/admin" class="nav-link">Admin Panel</a></li>
+        <li><a href="{{ url_for('destinations') }}" class="nav-link">Destinations</a></li>
+      {% else %}
+        <li><a href="{{ url_for('destinations') }}" class="nav-link {% if request.endpoint == 'destinations' %}active{% endif %}">Destinations</a></li>
+        <li><a href="{{ url_for('stays') }}" class="nav-link {% if request.endpoint == 'stays' %}active{% endif %}">Stays</a></li>
+        <li><a href="{{ url_for('experiences') }}" class="nav-link {% if request.endpoint == 'experiences' %}active{% endif %}">Experiences</a></li>
+        <li><a href="{{ url_for('guides') }}" class="nav-link {% if request.endpoint == 'guides' %}active{% endif %}">Guides</a></li>
+        <li><a href="{{ url_for('planner') }}" class="nav-link nav-cta {% if request.endpoint == 'planner' %}active{% endif %}">
+          <i data-lucide="sparkles" style="width:16px;height:16px;"></i> AI Planner
+        </a></li>
+      {% endif %}
     </ul>
 
     <!-- Actions -->
     <div class="nav-actions">
-      <a href="{{ url_for('auth') }}" class="btn btn-ghost">Sign In</a>
-      <a href="{{ url_for('auth') }}" class="btn btn-primary">Get Started</a>
+      {% if current_user_name %}
+        {% if current_user_role == 'tourist' %}
+          <a href="/become-guide-info" class="btn btn-ghost" style="color:var(--amber); border: 1px solid var(--amber);">Become a Guide</a>
+        {% endif %}
+        <span style="color: var(--amber); font-weight: 600; margin-right: 16px; font-size: 0.95rem;">
+          Welcome, {{ current_user_name }}
+        </span>
+        <button onclick="logoutUser()" class="btn btn-ghost">Logout</button>
+      {% else %}
+        <a href="{{ url_for('auth') }}" class="btn btn-ghost">Sign In</a>
+        <a href="{{ url_for('auth') }}" class="btn btn-primary">Get Started</a>
+      {% endif %}
       <button class="hamburger" id="hamburger" aria-label="Menu">
         <span></span><span></span><span></span>
       </button>
@@ -150,35 +169,10 @@
 ═══════════════════════════════════════════ -->
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 <script>
-  // This runs immediately whenever any page loads
+  // Clean up any legacy localStorage info for a clean server-side experience
   document.addEventListener('DOMContentLoaded', function() {
-    // Check the browser's notebook for the username and role
-    const savedUsername = localStorage.getItem('username');
-    const savedRole = localStorage.getItem('role');
-    const navActions = document.querySelector('.nav-actions');
-
-    if (savedUsername && navActions) {
-      let roleLinkHtml = '';
-      if (savedRole === 'tourist') {
-          roleLinkHtml = `<a href="/become-guide-info" class="btn btn-ghost" style="color:var(--amber); border: 1px solid var(--amber);">Become a Guide</a>`;
-      } else if (savedRole === 'guide') {
-          roleLinkHtml = `<a href="/dashboard" class="btn btn-ghost" style="color:var(--amber); border: 1px solid var(--amber);">My Dashboard</a>`;
-      } else if (savedRole === 'admin') {
-          roleLinkHtml = `<a href="/admin" class="btn btn-ghost" style="color:#fbbf24; border: 1px solid #fbbf24;">Admin Panel</a>`;
-      }
-
-      // If a user is logged in, change the HTML inside the navigation actions area
-      navActions.innerHTML = `
-        ${roleLinkHtml}
-        <span style="color: var(--amber); font-weight: 600; margin-right: 16px; font-size: 0.95rem;">
-          Welcome, ${savedUsername}
-        </span>
-        <button onclick="logoutUser()" class="btn btn-ghost">Logout</button>
-        <button class="hamburger" id="hamburger" aria-label="Menu">
-          <span></span><span></span><span></span>
-        </button>
-      `;
-    }
+    // We only remove them if they exist, but server-side is now the source of truth
+    // This is optional but helps avoid stale UI if someone manually edited storage
   });
 
   // This function runs when they click the new Logout button

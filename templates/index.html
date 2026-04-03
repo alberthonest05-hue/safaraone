@@ -7,6 +7,7 @@
 <!-- ═══════════════════════════════════════════
      HERO SECTION
 ═══════════════════════════════════════════ -->
+{% if current_user_role != 'guide' %}
 <section class="hero">
   <div class="hero-bg"></div>
   <div class="hero-overlay"></div>
@@ -78,6 +79,23 @@
     </div>
   </div>
 </section>
+{% else %}
+<section class="section" style="background: linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.9)), url('https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?w=1600&q=80'); background-size: cover; background-position: center; min-height: 50vh; display: flex; align-items: center;">
+    <div class="container text-center">
+        <div class="section-label" style="justify-content: center; margin-bottom: 24px;">
+            <i data-lucide="home" style="width: 14px; height: 14px;"></i> Guide Portal
+        </div>
+        <h1 class="display-lg mb-24">Welcome back, <span class="text-gradient">{{ current_user_name }} 👋</span></h1>
+        <p class="text-muted mb-40" style="font-size: 1.25rem; max-width: 600px; margin-left: auto; margin-right: auto;">
+            You have <strong style="color: var(--amber);">{{ pending_count }}</strong> pending booking requests waiting for your confirmation.
+        </p>
+        <div style="display: flex; gap: 16px; justify-content: center;">
+            <a href="/dashboard" class="btn btn-primary btn-lg">Go to My Dashboard</a>
+            <a href="/dashboard/bookings" class="btn btn-ghost btn-lg">View All Bookings</a>
+        </div>
+    </div>
+</section>
+{% endif %}
 
 <!-- ═══════════════════════════════════════════
      FEATURE STRIP
