@@ -307,49 +307,6 @@ def api_guides():
 #  GUIDE PROFILES & REGISTRATION (Phase 2B)
 # ─────────────────────────────────────────────
 
-@app.route("/api/guides/register", methods=["POST"])
-def api_guide_register():
-    data = request.get_json()
-    username = data.get("username")
-    email = data.get("email")
-    password = data.get("password")
-    
-    name = data.get("name")
-    destination_id = data.get("destination_id")
-    price_per_day_usd = data.get("price_per_day_usd", 50)
-    
-    if not all([username, email, password, name, destination_id]):
-        return jsonify({"error": "Missing required fields"}), 400
-
-    if not db.session.get(Destination, destination_id):
-        return jsonify({"error": "Invalid destination_id"}), 400
-    
-    if User.query.filter_by(email=email).first() or User.query.filter_by(username=username).first():
-        return jsonify({"error": "User already exists"}), 400
-
-    new_user = User(username=username, email=email, role="guide")
-    new_user.set_password(password)
-    db.session.add(new_user)
-    db.session.flush() # Get new_user.id
-    
-    guide_id = f"guide-{uuid.uuid4().hex[:8]}"
-
-    new_guide = Guide(
-        id=guide_id,
-        user_id=new_user.id,
-        destination_id=destination_id,
-        name=name,
-        price_per_day_usd=float(price_per_day_usd),
-        title=data.get("title", ""),
-        bio=data.get("bio", ""),
-        languages=data.get("languages", ["English"]),
-        specializations=data.get("specializations", [])
-    )
-    db.session.add(new_guide)
-    db.session.commit()
-
-    return jsonify({"message": "Guide registered", "guide_id": guide_id}), 201
-
 @app.route("/api/guides/me", methods=["GET", "PUT"])
 @jwt_required()
 def api_guides_me():
