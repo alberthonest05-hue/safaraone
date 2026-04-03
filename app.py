@@ -47,8 +47,10 @@ jwt = JWTManager(app)
 
 @jwt.unauthorized_loader
 def unauthorized_callback(reason):
+    # If the user is hitting an API route, return JSON
     if request.path.startswith('/api/'):
         return jsonify({"error": "Authentication required", "reason": reason}), 401
+    # For browser page requests, redirect to the login page
     return redirect(url_for('auth'))
 
 @jwt.expired_token_loader
@@ -738,6 +740,16 @@ def api_make_admin():
     user.role = "admin"
     db.session.commit()
     return jsonify({"message": f"User {username} is now an admin!"})
+
+
+@app.route('/api/setup/force-seed')
+def force_seed():
+    try:
+        from seed_db import seed
+        seed()
+        return "Database successfully seeded!"
+    except Exception as e:
+        return f"Seeding failed: {str(e)}"
 
 
 @app.route("/dashboard")
