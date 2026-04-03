@@ -744,6 +744,7 @@ def api_make_admin():
 
 @app.route('/api/setup/force-seed')
 def force_seed():
+    """Manual trigger to seed the database after the first deployment."""
     try:
         from seed_db import seed
         seed()
