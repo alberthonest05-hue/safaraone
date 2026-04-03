@@ -28,7 +28,11 @@ app.secret_key = os.environ.get("SECRET_KEY", "safaraone-secret-key-2025")
 CORS(app, supports_credentials=True)
 
 # Database Configuration
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "sqlite:///safaraone.db")
+db_url = os.environ.get('DATABASE_URL', 'sqlite:///safaraone.db')
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # JWT Configuration
