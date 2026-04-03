@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Become a Verified Guide — SafaraOne{% endblock %}
+
+{% block content %}
+<section class="page-hero" style="min-height:60vh; display:flex; align-items:center; background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.8)), url('https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=1600&q=80'); background-size:cover; background-position:center;">
+  <div class="container text-center">
+    <div class="section-label" style="justify-content:center; margin-bottom:24px;">
+      <i data-lucide="award" style="width:14px;height:14px"></i> Join the Best
+    </div>
+    <h1 class="display-lg" style="font-size:3.5rem; line-height:1.1; margin-bottom:24px;">
+      Empower Your Local Expertise.<br>
+      <span class="text-gradient">Become a SafaraOne Guide.</span>
+    </h1>
+    <p style="max-width:700px; margin:0 auto 40px; font-size:1.15rem; color:rgba(255,255,255,0.9);">
+      Join Tanzania's most elite marketplace for local guides. Turn your knowledge into a professional career and connect with travelers from around the globe.
+    </p>
+    <div style="display:flex; justify-content:center; gap:16px;">
+        <a href="#how-it-works" class="btn btn-ghost btn-lg">Learn More</a>
+        <a href="{{ url_for('register_guide_page') }}" class="btn btn-primary btn-lg">Proceed to Application</a>
+    </div>
+  </div>
+</section>
+
+<section id="how-it-works" class="section">
+  <div class="container">
+    <div class="text-center mb-64">
+      <h2 class="display-md mb-16">How it Works</h2>
+      <p class="text-muted" style="max-width:600px; margin:0 auto;">Simple 3-step process to get you started as a professional SafaraOne guide.</p>
+    </div>
+
+    <div class="grid-3" style="gap:32px;">
+      <!-- Step 1 -->
+      <div class="card p-32 text-center" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); backdrop-filter:blur(10px);">
+        <div style="width:64px; height:64px; background:rgba(245,158,11,0.1); border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 24px;">
+          <i data-lucide="edit-3" style="color:var(--amber); width:32px; height:32px;"></i>
+        </div>
+        <h3 style="font-size:1.25rem; font-weight:700; color:white; margin-bottom:12px;">1. Apply</h3>
+        <p style="color:var(--text-secondary); line-height:1.6;">
+          Complete your professional profile, highlight your local expertise, and set your daily rate in USD.
+        </p>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="card p-32 text-center" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); backdrop-filter:blur(10px);">
+        <div style="width:64px; height:64px; background:rgba(14,165,233,0.1); border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 24px;">
+          <i data-lucide="shield-check" style="color:var(--ocean); width:32px; height:32px;"></i>
+        </div>
+        <h3 style="font-size:1.25rem; font-weight:700; color:white; margin-bottom:12px;">2. Verify</h3>
+        <p style="color:var(--text-secondary); line-height:1.6;">
+          Our team reviews your credentials. Valid TTB (Tanzania Tourism Board) certification is required for full verification.
+        </p>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="card p-32 text-center" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); backdrop-filter:blur(10px);">
+        <div style="width:64px; height:64px; background:rgba(16,185,129,0.1); border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 24px;">
+          <i data-lucide="dollar-sign" style="color:#10b981; width:32px; height:32px;"></i>
+        </div>
+        <h3 style="font-size:1.25rem; font-weight:700; color:white; margin-bottom:12px;">3. Earn</h3>
+        <p style="color:var(--text-secondary); line-height:1.6;">
+          Receive direct bookings from international tourists. Enjoy weekly payouts and 0% platform fees for your first 3 months.
+        </p>
+      </div>
+    </div>
+
+    <!-- Ready Bottom CTA -->
+    <div style="margin-top:80px; background:linear-gradient(rgba(245,158,11,0.05), rgba(0,0,0,0)); border:1px solid rgba(245,158,11,0.1); border-radius:var(--radius-xl); padding:64px; text-align:center;">
+        <h2 style="font-size:2rem; font-weight:800; color:white; margin-bottom:16px;">Ready to showcase Tanzania to the world?</h2>
+        <p style="color:var(--text-muted); max-width:600px; margin:0 auto 32px; font-size:1.1rem;">Your professional journey as a verified safari guide starts here.</p>
+        <a href="{{ url_for('register_guide_page') }}" class="btn btn-primary btn-lg" style="padding:16px 48px; font-size:1.1rem; border-radius:12px;">Proceed to Application Form</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

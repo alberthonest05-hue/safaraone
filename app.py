@@ -538,6 +538,13 @@ def api_post_review():
         db.session.rollback()
         return jsonify({"error": "You have already reviewed this item"}), 400
 
+@app.route("/become-guide-info")
+@jwt_required(optional=True)
+def become_guide_info():
+    """Guide onboarding landing page."""
+    return render_template("become_guide_info.html")
+
+
 # ─────────────────────────────────────────────
 #  PHASE 2B: GUIDE REGISTRATION ROUTES
 # ─────────────────────────────────────────────

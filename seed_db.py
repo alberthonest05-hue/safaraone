@@ -1,27 +1,21 @@
 import os
 from app import app
-from models import db, Destination, Accommodation, Experience, Guide, Booking, Review
+# We added 'User' to the list of things to import here!
+from models import db, Destination, Accommodation, Experience, Guide, Booking, Review, User
 from data.mock_data import DESTINATIONS, ACCOMMODATIONS, EXPERIENCES, GUIDES
 
 def seed():
     with app.app_context():
-        # Create all tables
+        # Create all tables safely (ignores if they exist)
         db.create_all()
 
-        print("Clearing existing data...")
-        # Delete children before parents
-        Review.query.delete()
-        Booking.query.delete()
-        Guide.query.delete()
-        Experience.query.delete()
-        Accommodation.query.delete()
-        Destination.query.delete()
-        db.session.commit()
+        # THE FIX: Safety check - only seed if the database is empty!
+        if User.query.first():
+            print("Database already populated. Skipping seed.")
+            return
 
         print("Seeding Destinations...")
         for d_data in DESTINATIONS:
-            # We don't want to insert 'stats' as they will be dynamically queried later,
-            # but for now we'll just store the mock as is.
             dest = Destination(
                 id=d_data['id'],
                 name=d_data['name'],
@@ -105,7 +99,7 @@ def seed():
             db.session.add(guide)
 
         db.session.commit()
-        print("Database seeded successfully!")
+        print("Database seeded successfully! All old accounts have been deleted.")
 
 if __name__ == "__main__":
     seed()

@@ -104,7 +104,7 @@
       <div class="footer-col">
         <h4>For Guides</h4>
         <ul>
-          <li><a href="#">Join as a Guide</a></li>
+          <li><a href="{{ url_for('become_guide_info') }}">Join as a Guide</a></li>
           <li><a href="#">TTB Certification</a></li>
           <li><a href="#">Guide Resources</a></li>
           <li><a href="#">Payout Info</a></li>
@@ -160,7 +160,7 @@
     if (savedUsername && navActions) {
       let roleLinkHtml = '';
       if (savedRole === 'tourist') {
-          roleLinkHtml = `<a href="/register-guide" class="btn btn-ghost" style="color:var(--amber); border: 1px solid var(--amber);">Become a Guide</a>`;
+          roleLinkHtml = `<a href="/become-guide-info" class="btn btn-ghost" style="color:var(--amber); border: 1px solid var(--amber);">Become a Guide</a>`;
       } else if (savedRole === 'guide') {
           roleLinkHtml = `<a href="/dashboard" class="btn btn-ghost" style="color:var(--amber); border: 1px solid var(--amber);">My Dashboard</a>`;
       } else if (savedRole === 'admin') {
