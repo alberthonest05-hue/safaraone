@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Admin Control Panel — SafaraOne{% endblock %}
+
+{% block content %}
+<div style="max-width: 1200px; margin: 2rem auto; padding: 2rem; background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border-radius: 1.5rem; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.5rem;">
+        <div>
+            <h1 style="font-size: 2.25rem; font-weight: 800; color: white; letter-spacing: -0.025em; margin-bottom: 0.5rem;">Admin Control Panel</h1>
+            <p style="color: var(--text-muted);">Manage users, permissions, and platform security.</p>
+        </div>
+        <div style="background: rgba(255,255,255,0.05); padding: 0.75rem 1.5rem; border-radius: 1rem; border: 1px solid rgba(255,255,255,0.1);">
+            <span style="color: var(--text-muted); font-size: 0.875rem;">Total Registered Users:</span>
+            <span style="color: var(--amber); font-weight: 700; margin-left: 0.5rem; font-size: 1.1rem;">{{ users|length }}</span>
+        </div>
+    </div>
+
+    <!-- User Management Table -->
+    <div style="overflow-x: auto; border: 1px solid rgba(255,255,255,0.05); border-radius: 1rem; background: rgba(0,0,0,0.2);">
+        <table style="width: 100%; border-collapse: collapse; text-align: left;">
+            <thead>
+                <tr style="background: rgba(255,255,255,0.05);">
+                    <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">User ID</th>
+                    <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Account Info</th>
+                    <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Role</th>
+                    <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Created At</th>
+                    <th style="padding: 1.25rem; text-align: right; color: #9ca3af; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+                    <td style="padding: 1.25rem; color: #9ca3af; font-family: monospace;">#{{ user.id }}</td>
+                    <td style="padding: 1.25rem;">
+                        <div style="color: white; font-weight: 600;">@{{ user.username }}</div>
+                        <div style="color: #6b7280; font-size: 0.85rem;">{{ user.email }}</div>
+                    </td>
+                    <td style="padding: 1.25rem;">
+                        {% if user.role == 'admin' %}
+                            <span style="background: rgba(245,158,11,0.15); color: #fbbf24; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; border: 1px solid rgba(245,158,11,0.2);">Admin</span>
+                        {% elif user.role == 'guide' %}
+                            <span style="background: rgba(59,130,246,0.15); color: #60a5fa; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; border: 1px solid rgba(59,130,246,0.2);">Tour Guide</span>
+                        {% else %}
+                            <span style="background: rgba(107,114,128,0.15); color: #d1d5db; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; border: 1px solid rgba(107,114,128,0.2);">Tourist</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 1.25rem; color: #6b7280; font-size: 0.875rem;">{{ user.created_at.strftime('%Y-%m-%d') }}</td>
+                    <td style="padding: 1.25rem; text-align: right;">
+                        <button onclick="deleteUser({{ user.id }}, '{{ user.username }}')" class="btn btn-ghost" style="color: #ef4444; border-color: rgba(239,68,68,0.2);">
+                            Delete Account
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+async function deleteUser(id, username) {
+    if (!confirm(`CAUTION: This will permanently delete user @${username} and all their related bookings/guides. This cannot be undone. \n\nAre you sure?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/admin/users/${id}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await response.json();
+
+        if (response.ok) {
+            alert(data.message);
+            window.location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Failed to delete user'));
+        }
+    } catch (err) {
+        alert('Network error. Please try again.');
+    }
+}
+</script>
+{% endblock %}

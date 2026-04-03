@@ -158,15 +158,18 @@
     const navActions = document.querySelector('.nav-actions');
 
     if (savedUsername && navActions) {
-      let becomeGuideHtml = '';
+      let roleLinkHtml = '';
       if (savedRole === 'tourist') {
-          // Add the "Become a Guide" link for tourists
-          becomeGuideHtml = `<a href="/register-guide" class="btn btn-ghost" style="color:var(--amber); border: 1px solid var(--amber);">Become a Guide</a>`;
+          roleLinkHtml = `<a href="/register-guide" class="btn btn-ghost" style="color:var(--amber); border: 1px solid var(--amber);">Become a Guide</a>`;
+      } else if (savedRole === 'guide') {
+          roleLinkHtml = `<a href="/dashboard" class="btn btn-ghost" style="color:var(--amber); border: 1px solid var(--amber);">My Dashboard</a>`;
+      } else if (savedRole === 'admin') {
+          roleLinkHtml = `<a href="/admin" class="btn btn-ghost" style="color:#fbbf24; border: 1px solid #fbbf24;">Admin Panel</a>`;
       }
 
       // If a user is logged in, change the HTML inside the navigation actions area
       navActions.innerHTML = `
-        ${becomeGuideHtml}
+        ${roleLinkHtml}
         <span style="color: var(--amber); font-weight: 600; margin-right: 16px; font-size: 0.95rem;">
           Welcome, ${savedUsername}
         </span>

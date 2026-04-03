@@ -63,9 +63,6 @@ def api_register():
     if not username or not email or not password:
         return jsonify({"error": "Please provide a username, email, and password."}), 400
 
-    if User.query.filter_by(email=email).first():
-        return jsonify({"error": "Email already registered"}), 400
-    
     if User.query.filter_by(username=username).first():
         return jsonify({"error": "Username already taken"}), 400
 
@@ -75,7 +72,10 @@ def api_register():
     db.session.add(new_user)
     db.session.commit()
 
-    return jsonify({"message": "User registered successfully", "user_id": new_user.id}), 201
+    access_token = create_access_token(identity=str(new_user.id))
+    resp = jsonify({"message": "User registered successfully", "user_id": new_user.id, "username": new_user.username, "role": new_user.role})
+    set_access_cookies(resp, access_token)
+    return resp, 201
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -606,6 +606,89 @@ def api_guide_register():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────
+#  PHASE 2 MASTER UPDATE: DASHBOARDS & ADMIN
+# ─────────────────────────────────────────────
+
+@app.route("/admin")
+@jwt_required()
+def admin_dashboard():
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    if not user or user.role != "admin":
+        return redirect(url_for("index"))
+    
+    users = User.query.all()
+    return render_template("admin_dashboard.html", users=users)
+
+
+@app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
+@jwt_required()
+def api_admin_delete_user(user_id):
+    current_admin_id = int(get_jwt_identity())
+    admin_user = User.query.get(current_admin_id)
+    if not admin_user or admin_user.role != "admin":
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    user_to_delete = User.query.get(user_id)
+    if not user_to_delete:
+        return jsonify({"error": "User not found"}), 404
+    
+    if user_to_delete.id == current_admin_id:
+        return jsonify({"error": "You cannot delete yourself"}), 400
+
+    try:
+        # Cascade-like manual cleanup
+        # Delete Guide profile if exists
+        Guide.query.filter_by(user_id=user_id).delete()
+        # Delete Bookings
+        Booking.query.filter_by(user_id=user_id).delete()
+        # Delete Reviews
+        Review.query.filter_by(user_id=user_id).delete()
+        
+        db.session.delete(user_to_delete)
+        db.session.commit()
+        return jsonify({"message": f"User {user_to_delete.username} and all related data deleted successfully"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/setup/make-admin", methods=["POST"])
+def api_make_admin():
+    # Only allow if no admins exist
+    admin_exists = User.query.filter_by(role="admin").first()
+    if admin_exists:
+        return jsonify({"error": "An admin already exists. Use the Admin panel."}), 403
+    
+    data = request.get_json()
+    username = data.get("username")
+    if not username:
+        return jsonify({"error": "Username required"}), 400
+        
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    user.role = "admin"
+    db.session.commit()
+    return jsonify({"message": f"User {username} is now an admin!"})
+
+
+@app.route("/dashboard")
+@jwt_required()
+def guide_dashboard():
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    if not user or user.role != "guide":
+        return redirect(url_for("index"))
+    
+    guide = Guide.query.filter_by(user_id=user_id).first()
+    bookings = Booking.query.filter_by(item_type="guide", item_id=str(guide.id)).all() if guide else []
+    
+    return render_template("guide_dashboard.html", guide=guide, bookings=bookings)
 
 
 if __name__ == "__main__":
