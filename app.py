@@ -1097,5 +1097,23 @@ def my_trips():
     return render_template('my_trips.html', bookings=enriched, username=user.username)
 
 
+@app.route('/api/bookings/<int:booking_id>/cancel', methods=['POST'])
+@jwt_required()
+def cancel_booking(booking_id):
+    user_id = int(get_jwt_identity())
+    booking = db.session.get(Booking, booking_id)
+
+    if not booking:
+        return jsonify({"error": "Booking not found"}), 404
+    if booking.user_id != user_id:
+        return jsonify({"error": "Unauthorized"}), 403
+    if booking.status in ['cancelled', 'completed']:
+        return jsonify({"error": "Cannot cancel this booking"}), 400
+
+    booking.status = 'cancelled'
+    db.session.commit()
+    return jsonify({"message": "Booking cancelled"}), 200
+
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5050)

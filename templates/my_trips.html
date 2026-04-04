@@ -90,6 +90,20 @@
     .badge-confirmed{ background: rgba(74,222,128,0.15); color: #4ade80; border: 1px solid rgba(74,222,128,0.25); }
     .badge-completed{ background: rgba(99,102,241,0.15); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.25); }
     .badge-cancelled{ background: rgba(239,68,68,0.12);  color: #fca5a5; border: 1px solid rgba(239,68,68,0.2); }
+    .cancel-btn {
+      background: rgba(239,68,68,0.15);
+      color: #fca5a5;
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .cancel-btn:hover {
+      background: rgba(239,68,68,0.3);
+    }
   </style>
 </head>
 <body>
@@ -131,11 +145,30 @@
         </div>
       </div>
       <div class="trip-price">${{ "%.2f"|format(b.amount_usd) }}</div>
+      {% if b.status in ['pending', 'confirmed'] %}
+      <button onclick="cancelTrip({{ b.id }})" class="cancel-btn">Cancel</button>
+      {% endif %}
     </div>
     {% endfor %}
   </div>
   {% endif %}
 
 </div>
+<script>
+async function cancelTrip(bookingId) {
+  if (!confirm('Are you sure you want to cancel this trip?')) return;
+  try {
+    const res = await fetch(`/api/bookings/${bookingId}/cancel`, { method: 'POST' });
+    if (res.ok) {
+      window.location.reload();
+    } else {
+      const data = await res.json();
+      alert(data.error || 'Failed to cancel trip.');
+    }
+  } catch (err) {
+    alert('Network error. Please try again.');
+  }
+}
+</script>
 </body>
 </html>

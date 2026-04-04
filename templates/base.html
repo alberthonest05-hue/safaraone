@@ -51,6 +51,7 @@
         <li><a href="{{ url_for('stays') }}" class="nav-link {% if request.endpoint == 'stays' %}active{% endif %}">Stays</a></li>
         <li><a href="{{ url_for('experiences') }}" class="nav-link {% if request.endpoint == 'experiences' %}active{% endif %}">Experiences</a></li>
         <li><a href="{{ url_for('guides') }}" class="nav-link {% if request.endpoint == 'guides' %}active{% endif %}">Guides</a></li>
+        <li><a href="{{ url_for('my_trips') }}" class="nav-link {% if request.endpoint == 'my_trips' %}active{% endif %}">My Trips</a></li>
         <li><a href="{{ url_for('planner') }}" class="nav-link nav-cta {% if request.endpoint == 'planner' %}active{% endif %}">
           <i data-lucide="sparkles" style="width:16px;height:16px;"></i> AI Planner
         </a></li>
