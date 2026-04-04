@@ -126,7 +126,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         window.location.href = '/admin';
                     } else if (data.role === 'guide') {
                         window.location.href = '/dashboard';
+                    } else if (data.role === 'tourist') {
+                        window.location.href = '/';
                     } else {
+                        // Fallback for any other roles
                         window.location.href = '/';
                     }
                 } else {
@@ -178,6 +181,8 @@ document.addEventListener('DOMContentLoaded', function() {
                             window.location.href = '/admin';
                         } else if (loginData.role === 'guide') {
                             window.location.href = '/dashboard';
+                        } else if (loginData.role === 'tourist') {
+                            window.location.href = '/';
                         } else {
                             window.location.href = '/';
                         }
