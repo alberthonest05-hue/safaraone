@@ -771,56 +771,71 @@ def force_seed():
         return f'Seeding failed: {traceback.format_exc()}'
 
 
-@app.route("/dashboard")
-@jwt_required()
+@app.route('/dashboard')
+@jwt_required(optional=True)
 def guide_dashboard():
-    user_id = int(get_jwt_identity())
-    user = db.session.get(User, user_id)
+    user_id = get_jwt_identity()
+    if not user_id:
+        return redirect(url_for('auth'))
+    
+    user = db.session.get(User, int(user_id))
     if not user:
         return redirect(url_for('auth'))
     if user.role != 'guide':
         return redirect(url_for('index'))
-    guide = Guide.query.filter_by(user_id=user_id).first()
-    # If guide has no profile or incomplete profile, show credentials form
-    if not guide or not guide.bio or not guide.price_per_day_usd:
+    
+    try:
+        guide = Guide.query.filter_by(user_id=int(user_id)).first()
+        
+        if not guide or not guide.bio or not guide.price_per_day_usd:
+            try:
+                destinations = [d.to_dict() for d in Destination.query.all()]
+            except:
+                destinations = []
+            hardcoded = [
+                {'id': 'zanzibar', 'name': 'Zanzibar'},
+                {'id': 'serengeti', 'name': 'Serengeti'},
+                {'id': 'kilimanjaro', 'name': 'Mount Kilimanjaro'}
+            ]
+            existing_ids = [d['id'] for d in destinations]
+            for h in hardcoded:
+                if h['id'] not in existing_ids:
+                    destinations.append(h)
+            return render_template('guide_credentials.html', destinations=destinations)
+        
+        guide_dict = {
+            'id': guide.id or '',
+            'name': guide.name or user.username,
+            'avatar_url': guide.avatar_url or 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=400',
+            'title': guide.title or 'SafaraOne Guide',
+            'languages': guide.languages or [],
+            'specializations': guide.specializations or [],
+            'price_per_day_usd': guide.price_per_day_usd or 0,
+            'rating': guide.rating or 0.0,
+            'total_reviews': guide.total_reviews or 0,
+            'bio': guide.bio or '',
+            'destination_id': guide.destination_id or '',
+            'is_verified': guide.is_verified or False,
+        }
+        
         try:
-            destinations = [d.to_dict() for d in Destination.query.all()]
+            bookings = Booking.query.filter_by(item_type='guide', item_id=guide.id).all()
         except:
-            destinations = []
+            bookings = []
+            
+        total_earnings = sum((b.amount_usd or 0) * 0.8 for b in bookings if b.status == 'completed')
+        pending = [b for b in bookings if b.status == 'confirmed']
         
-        # Always add hardcoded fallbacks so the dropdown never breaks
-        hardcoded = [
-            {'id': 'zanzibar', 'name': 'Zanzibar'},
-            {'id': 'serengeti', 'name': 'Serengeti'},
-            {'id': 'kilimanjaro', 'name': 'Mount Kilimanjaro'}
-        ]
-        existing_ids = [d['id'] for d in destinations]
-        for h in hardcoded:
-            if h['id'] not in existing_ids:
-                destinations.append(h)
-        
-        return render_template('guide_credentials.html', destinations=destinations)
-    # Full dashboard
-    bookings = Booking.query.filter_by(item_type='guide', item_id=guide.id).all()
-    
-    # THE FIX: Add safe fallbacks before rendering to prevent template crashes
-    guide_dict = guide.to_dict()
-    guide_dict['avatar_url'] = guide_dict.get('avatar_url') or 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=400'
-    guide_dict['languages'] = guide_dict.get('languages') or []
-    guide_dict['specializations'] = guide_dict.get('specializations') or []
-    guide_dict['title'] = guide_dict.get('title') or 'SafaraOne Guide'
-    guide_dict['rating'] = guide_dict.get('rating') or 0.0
-    guide_dict['total_reviews'] = guide_dict.get('total_reviews') or 0
-
-    total_earnings = sum(b.amount_usd * 0.8 for b in (bookings or []) if b.status == 'completed')
-    pending = [b for b in (bookings or []) if b.status == 'confirmed']
-    
-    return render_template('guide_dashboard.html',
-        guide=guide_dict,
-        bookings=bookings,
-        total_earnings=round(total_earnings, 2),
-        pending_bookings=pending
-    )
+        return render_template('guide_dashboard.html',
+            guide=guide_dict,
+            bookings=bookings,
+            total_earnings=round(total_earnings, 2),
+            pending_bookings=pending
+        )
+    except Exception as e:
+        import traceback
+        print('GUIDE DASHBOARD ERROR:', traceback.format_exc())
+        return f'Dashboard error: {str(e)}', 500
 
 
 if __name__ == "__main__":
