@@ -71,7 +71,7 @@
             {% for a in stay.amenities[:5] %}<span class="amenity-tag">{{ a }}</span>{% endfor %}
           </div>
           <div style="display:flex;gap:8px;margin-top:16px">
-            <a href="{{ stay.booking_url }}" class="btn btn-primary btn-sm" style="flex:1;justify-content:center">
+            <a href="{{ url_for('book_item', item_type='accommodation', item_id=stay.id) }}" class="btn btn-primary btn-sm" style="flex:1;justify-content:center">
               <i data-lucide="calendar-check" style="width:15px;height:15px"></i> Book Now
             </a>
             <button class="btn btn-ghost btn-sm" onclick="this.innerHTML='❤️ Saved'" title="Save">

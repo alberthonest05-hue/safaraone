@@ -75,7 +75,7 @@
             </div>
             <div style="display:flex;gap:6px">
               <button class="btn btn-ghost btn-sm" onclick="this.innerHTML='❤️'" title="Save"><i data-lucide="heart" style="width:14px;height:14px"></i></button>
-              <a href="{{ exp.booking_url }}" class="btn btn-primary btn-sm">Book</a>
+              <a href="{{ url_for('book_item', item_type='experience', item_id=exp.id) }}" class="btn btn-primary btn-sm">Book</a>
             </div>
           </div>
         </div>
