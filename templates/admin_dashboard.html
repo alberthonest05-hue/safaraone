@@ -2,82 +2,181 @@
 {% block title %}Admin Control Panel — SafaraOne{% endblock %}
 
 {% block content %}
-<div style="max-width: 1200px; margin: 2rem auto; padding: 2rem; background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border-radius: 1.5rem; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.5rem;">
+<div style="max-width: 1400px; margin: 2rem auto; padding: 2rem; display: flex; flex-direction: column; gap: 2rem;">
+    <!-- Page Header -->
+    <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border-radius: 1.5rem; border: 1px solid rgba(255,255,255,0.1); padding: 2rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);">
         <div>
             <h1 style="font-size: 2.25rem; font-weight: 800; color: white; letter-spacing: -0.025em; margin-bottom: 0.5rem;">Admin Control Panel</h1>
-            <p style="color: var(--text-muted);">Manage users, permissions, and platform security.</p>
+            <p style="color: #9ca3af; font-size: 1.1rem;">Platform-wide analytics, security, and management.</p>
         </div>
-        <div style="background: rgba(255,255,255,0.05); padding: 0.75rem 1.5rem; border-radius: 1rem; border: 1px solid rgba(255,255,255,0.1);">
-            <span style="color: var(--text-muted); font-size: 0.875rem;">Total Registered Users:</span>
-            <span style="color: var(--amber); font-weight: 700; margin-left: 0.5rem; font-size: 1.1rem;">{{ users|length }}</span>
+        <div style="display: flex; gap: 1rem;">
+            <button onclick="window.location.reload()" class="btn btn-secondary" style="display: flex; align-items: center; gap: 0.5rem;">
+                <i data-lucide="refresh-cw" style="width: 16px;"></i> Refresh Data
+            </button>
         </div>
     </div>
 
-    <!-- User Management Table -->
-    <div style="overflow-x: auto; border: 1px solid rgba(255,255,255,0.05); border-radius: 1rem; background: rgba(0,0,0,0.2);">
-        <table style="width: 100%; border-collapse: collapse; text-align: left;">
-            <thead>
-                <tr style="background: rgba(255,255,255,0.05);">
-                    <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">User ID</th>
-                    <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Account Info</th>
-                    <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Role</th>
-                    <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Created At</th>
-                    <th style="padding: 1.25rem; text-align: right; color: #9ca3af; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for user in users %}
-                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
-                    <td style="padding: 1.25rem; color: #9ca3af; font-family: monospace;">#{{ user.id }}</td>
-                    <td style="padding: 1.25rem;">
-                        <div style="color: white; font-weight: 600;">@{{ user.username }}</div>
-                        <div style="color: #6b7280; font-size: 0.85rem;">{{ user.email }}</div>
-                    </td>
-                    <td style="padding: 1.25rem;">
-                        {% if user.role == 'admin' %}
-                            <span style="background: rgba(245,158,11,0.15); color: #fbbf24; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; border: 1px solid rgba(245,158,11,0.2);">Admin</span>
-                        {% elif user.role == 'guide' %}
-                            <span style="background: rgba(59,130,246,0.15); color: #60a5fa; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; border: 1px solid rgba(59,130,246,0.2);">Tour Guide</span>
-                        {% else %}
-                            <span style="background: rgba(107,114,128,0.15); color: #d1d5db; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; border: 1px solid rgba(107,114,128,0.2);">Tourist</span>
-                        {% endif %}
-                    </td>
-                    <td style="padding: 1.25rem; color: #6b7280; font-size: 0.875rem;">{{ user.created_at.strftime('%Y-%m-%d') }}</td>
-                    <td style="padding: 1.25rem; text-align: right;">
-                        <button onclick="deleteUser({{ user.id }}, '{{ user.username }}')" class="btn btn-ghost" style="color: #ef4444; border-color: rgba(239,68,68,0.2);">
-                            Delete Account
-                        </button>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <!-- 1. Platform Analytics Cards -->
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem;">
+        <div style="background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border-radius: 1rem; border: 1px solid rgba(255,255,255,0.1); padding: 1.5rem;">
+            <div style="color: #6b7280; font-size: 0.75rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Total Users</div>
+            <div style="color: white; font-size: 1.75rem; font-weight: 800;">{{ stats.total_users }}</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border-radius: 1rem; border: 1px solid rgba(255,255,255,0.1); padding: 1.5rem;">
+            <div style="color: #6b7280; font-size: 0.75rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Total Bookings</div>
+            <div style="color: white; font-size: 1.75rem; font-weight: 800;">{{ stats.total_bookings }}</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border-radius: 1rem; border: 1px solid rgba(255,255,255,0.1); padding: 1.5rem;">
+            <div style="color: #6b7280; font-size: 0.75rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Total Revenue</div>
+            <div style="color: #10b981; font-size: 1.75rem; font-weight: 800;">${{ stats.total_revenue }}</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border-radius: 1rem; border: 1px solid rgba(255,255,255,0.1); padding: 1.5rem;">
+            <div style="color: #6b7280; font-size: 0.75rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Active Guides</div>
+            <div style="color: #fbbf24; font-size: 1.75rem; font-weight: 800;">{{ stats.active_guides }}</div>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+        <!-- 2. Guide Verification Queue -->
+        <div style="background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border-radius: 1.5rem; border: 1px solid rgba(255,255,255,0.1); padding: 1.5rem;">
+            <h3 style="color: white; font-weight: 700; font-size: 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                <i data-lucide="shield-check" style="color: #fbbf24; width: 20px;"></i> Guide Verification Queue
+            </h3>
+            {% if unverified_guides %}
+                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                    {% for guide in unverified_guides %}
+                    <div style="background: rgba(255,255,255,0.05); padding: 1.25rem; border-radius: 1rem; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <img src="{{ guide.avatar_url or 'https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?w=100' }}" style="width: 48px; height: 48px; border-radius: 0.75rem; object-fit: cover;">
+                            <div>
+                                <div style="color: white; font-weight: 600;">{{ guide.name }}</div>
+                                <div style="color: #6b7280; font-size: 0.85rem;">{{ guide.title }}</div>
+                            </div>
+                        </div>
+                        <button onclick="verifyGuide('{{ guide.id }}')" class="btn btn-primary btn-sm">Approve</button>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div style="text-align: center; padding: 2rem; color: #6b7280; font-style: italic; background: rgba(0,0,0,0.1); border-radius: 1rem;">
+                    No pending verifications.
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- 3. Account Suspension / Existing User Management -->
+        <div style="background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border-radius: 1.5rem; border: 1px solid rgba(255,255,255,0.1); padding: 1.5rem;">
+            <h3 style="color: white; font-weight: 700; font-size: 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                <i data-lucide="users" style="color: #60a5fa; width: 20px;"></i> User Management
+            </h3>
+            <div style="overflow-x: auto; border: 1px solid rgba(255,255,255,0.05); border-radius: 1rem;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+                    <thead style="background: rgba(255,255,255,0.05);">
+                        <tr>
+                            <th style="padding: 1rem; color: #9ca3af; font-weight: 600;">User</th>
+                            <th style="padding: 1rem; color: #9ca3af; font-weight: 600;">Role</th>
+                            <th style="padding: 1rem; color: #9ca3af; font-weight: 600; text-align: right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                            <td style="padding: 1rem;">
+                                <div style="color: white; font-weight: 600;">@{{ user.username }}</div>
+                                <div style="color: #6b7280; font-size: 0.75rem;">{{ user.email }}</div>
+                            </td>
+                            <td style="padding: 1rem;">
+                                {% if user.role == 'admin' %}
+                                    <span style="color: #fbbf24; font-size: 0.75rem; font-weight: 700;">Admin</span>
+                                {% elif user.role == 'suspended' %}
+                                    <span style="color: #ef4444; font-size: 0.75rem; font-weight: 700;">Suspended</span>
+                                {% else %}
+                                    <span style="color: #9ca3af; font-size: 0.75rem;">{{ user.role|title }}</span>
+                                {% endif %}
+                            </td>
+                            <td style="padding: 1rem; text-align: right;">
+                                <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                                    {% if user.role != 'suspended' and user.role != 'admin' %}
+                                    <button onclick="suspendUser({{ user.id }}, '{{ user.username }}')" class="btn btn-sm" style="background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2);">Suspend</button>
+                                    {% endif %}
+                                    <button onclick="deleteUser({{ user.id }}, '{{ user.username }}')" style="background: none; border: none; color: #6b7280; cursor: pointer;"><i data-lucide="trash-2" style="width: 16px;"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Booking Oversight Table -->
+    <div style="background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border-radius: 1.5rem; border: 1px solid rgba(255,255,255,0.1); padding: 1.5rem;">
+        <h3 style="color: white; font-weight: 700; font-size: 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+            <i data-lucide="calendar" style="color: #10b981; width: 20px;"></i> Platform Booking Oversight
+        </h3>
+        <div style="overflow-x: auto; border: 1px solid rgba(255,255,255,0.05); border-radius: 1rem;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                <thead style="background: rgba(255,255,255,0.05);">
+                    <tr>
+                        <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.75rem; text-transform: uppercase;">Reference</th>
+                        <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.75rem; text-transform: uppercase;">User ID</th>
+                        <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.75rem; text-transform: uppercase;">Type</th>
+                        <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.75rem; text-transform: uppercase;">Amount</th>
+                        <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.75rem; text-transform: uppercase;">Status</th>
+                        <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.75rem; text-transform: uppercase;">Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for b in bookings %}
+                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                        <td style="padding: 1.25rem; color: white; font-family: monospace;">BK-{{ b.id }}</td>
+                        <td style="padding: 1.25rem; color: #9ca3af;">#{{ b.user_id }}</td>
+                        <td style="padding: 1.25rem;"><span style="background: rgba(255,255,255,0.08); padding: 0.25rem 0.5rem; border-radius: 0.4rem; font-size: 0.8rem; color: white;">{{ b.item_type|upper }}</span></td>
+                        <td style="padding: 1.25rem; color: #10b981; font-weight: 700;">${{ b.amount_usd }}</td>
+                        <td style="padding: 1.25rem;">
+                            <span style="color: {% if b.status == 'confirmed' %}#10b981{% elif b.status == 'cancelled' %}#ef4444{% else %}#fbbf24{% endif %}; font-weight: 600; font-size: 0.85rem;">
+                                {{ b.status|title }}
+                            </span>
+                        </td>
+                        <td style="padding: 1.25rem; color: #6b7280; font-size: 0.85rem;">{{ b.booking_date.strftime('%Y-%m-%d') if b.booking_date else 'N/A' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
 <script>
-async function deleteUser(id, username) {
-    if (!confirm(`CAUTION: This will permanently delete user @${username} and all their related bookings/guides. This cannot be undone. \n\nAre you sure?`)) {
-        return;
-    }
-
+async function verifyGuide(guideId) {
+    if (!confirm("Approve this guide for the platform?")) return;
     try {
-        const response = await fetch(`/api/admin/users/${id}`, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' }
-        });
+        const response = await fetch(`/api/admin/guides/${guideId}/verify`, { method: 'POST' });
         const data = await response.json();
+        if (response.ok) { alert(data.message); window.location.reload(); }
+        else alert("Error: " + data.error);
+    } catch (err) { alert("Network error"); }
+}
 
-        if (response.ok) {
-            alert(data.message);
-            window.location.reload();
-        } else {
-            alert('Error: ' + (data.error || 'Failed to delete user'));
-        }
-    } catch (err) {
-        alert('Network error. Please try again.');
-    }
+async function suspendUser(userId, username) {
+    if (!confirm(`Are you sure you want to suspend @${username}? They will lose guide/tourist access.`)) return;
+    try {
+        const response = await fetch(`/api/admin/users/${userId}/suspend`, { method: 'POST' });
+        const data = await response.json();
+        if (response.ok) { alert(data.message); window.location.reload(); }
+        else alert("Error: " + data.error);
+    } catch (err) { alert("Network error"); }
+}
+
+async function deleteUser(id, username) {
+    if (!confirm(`CAUTION: Permanently delete @${username}?`)) return;
+    try {
+        const response = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (response.ok) { alert(data.message); window.location.reload(); }
+        else alert("Error: " + data.error);
+    } catch (err) { alert("Network error"); }
 }
 </script>
 {% endblock %}

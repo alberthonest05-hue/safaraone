@@ -699,23 +699,83 @@ def api_guide_register():
 @jwt_required()
 def admin_dashboard():
     user_id = int(get_jwt_identity())
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user or user.role != "admin":
         return redirect(url_for("index"))
     
+    # Platform Analytics
+    total_users = User.query.count()
+    total_bookings = Booking.query.count()
+    total_revenue = db.session.query(db.func.sum(Booking.amount_usd)).filter(Booking.status == 'confirmed').scalar() or 0.0
+    active_guides = Guide.query.filter_by(is_verified=True).count()
+    
+    stats = {
+        "total_users": total_users,
+        "total_bookings": total_bookings,
+        "total_revenue": round(total_revenue, 2),
+        "active_guides": active_guides
+    }
+    
     users = User.query.all()
-    return render_template("admin_dashboard.html", users=users)
+    unverified_guides = Guide.query.filter_by(is_verified=False).all()
+    all_bookings = Booking.query.order_by(Booking.booking_date.desc()).all()
+    
+    return render_template("admin_dashboard.html", 
+                           users=users, 
+                           stats=stats, 
+                           unverified_guides=unverified_guides,
+                           bookings=all_bookings)
+
+
+@app.route('/api/admin/guides/<guide_id>/verify', methods=['POST'])
+@jwt_required()
+def api_admin_verify_guide(guide_id):
+    user_id = int(get_jwt_identity())
+    admin = db.session.get(User, user_id)
+    if not admin or admin.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    guide = db.session.get(Guide, guide_id)
+    if not guide:
+        # Try finding by user_id if ID lookup fails
+        guide = Guide.query.filter_by(user_id=int(guide_id)).first() if guide_id.isdigit() else None
+        if not guide:
+            return jsonify({'error': 'Guide not found'}), 404
+            
+    guide.is_verified = True
+    db.session.commit()
+    return jsonify({'message': f'Guide {guide.name} verified successfully'})
+
+
+@app.route('/api/admin/users/<int:user_id>/suspend', methods=['POST'])
+@jwt_required()
+def api_admin_suspend_user(user_id):
+    current_admin_id = int(get_jwt_identity())
+    admin = db.session.get(User, current_admin_id)
+    if not admin or admin.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+        
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+        
+    if user.id == current_admin_id:
+        return jsonify({'error': 'Cannot suspend yourself'}), 400
+        
+    user.role = 'suspended'
+    db.session.commit()
+    return jsonify({'message': f'User {user.username} suspended'})
 
 
 @app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
 @jwt_required()
 def api_admin_delete_user(user_id):
     current_admin_id = int(get_jwt_identity())
-    admin_user = User.query.get(current_admin_id)
-    if not admin_user or admin_user.role != "admin":
+    admin_user = db.session.get(User, current_admin_id)
+    if not admin_user or admin_user.role != "admin" :
         return jsonify({"error": "Unauthorized"}), 403
     
-    user_to_delete = User.query.get(user_id)
+    user_to_delete = db.session.get(User, user_id)
     if not user_to_delete:
         return jsonify({"error": "User not found"}), 404
     
