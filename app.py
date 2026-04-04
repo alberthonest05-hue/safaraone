@@ -93,6 +93,15 @@ def inject_user():
 
 with app.app_context():
     db.create_all()
+    # Auto-seed if database is empty
+    try:
+        from models import Destination
+        if Destination.query.count() == 0:
+            from seed_db import seed
+            seed()
+            print('Auto-seeded database on startup')
+    except Exception as e:
+        print(f'Auto-seed skipped: {e}')
 
 
 # ─────────────────────────────────────────────
