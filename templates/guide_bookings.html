@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Manage Bookings — SafaraOne{% endblock %}
+
+{% block content %}
+<div style="max-width: 1200px; margin: 2rem auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 2rem;">
+    <!-- Header -->
+    <div style="background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border-radius: 1.5rem; border: 1px solid rgba(255,255,255,0.1); padding: 2rem; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);">
+        <div>
+            <h1 style="font-size: 2rem; font-weight: 800; color: white; margin-bottom: 0.5rem;">Trip Bookings</h1>
+            <p style="color: #9ca3af; font-size: 1.1rem;">Manage your upcoming trips and guest requests.</p>
+        </div>
+        <a href="/dashboard" class="btn btn-secondary" style="display: flex; align-items: center; gap: 0.5rem;">
+            <i data-lucide="arrow-left" style="width: 18px;"></i> Back to Dashboard
+        </a>
+    </div>
+
+    <!-- Bookings Table Card -->
+    <div style="background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border-radius: 1.5rem; border: 1px solid rgba(255,255,255,0.1); padding: 2rem;">
+        <div id="status-message" style="display: none; padding: 1rem; border-radius: 0.75rem; margin-bottom: 1.5rem; font-weight: 600;"></div>
+        
+        {% if bookings %}
+            <div style="overflow-x: auto; border-radius: 1rem; border: 1px solid rgba(255,255,255,0.05);">
+                <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead style="background: rgba(255,255,255,0.05);">
+                        <tr>
+                            <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.75rem; text-transform: uppercase;">Reference</th>
+                            <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.75rem; text-transform: uppercase;">Guests</th>
+                            <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.75rem; text-transform: uppercase;">Scheduled Date</th>
+                            <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.75rem; text-transform: uppercase;">Amount</th>
+                            <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.75rem; text-transform: uppercase;">Status</th>
+                            <th style="padding: 1.25rem; color: #9ca3af; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; text-align: right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for b in bookings %}
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.01)'" onmouseout="this.style.background='transparent'">
+                            <td style="padding: 1.25rem; color: white; font-family: monospace; font-size: 0.9rem;">BK-{{ b.id }}</td>
+                            <td style="padding: 1.25rem; color: white;">{{ b.num_guests }} Adults</td>
+                            <td style="padding: 1.25rem; color: #9ca3af;">{{ b.scheduled_date.strftime('%B %d, %Y') if b.scheduled_date else 'TBA' }}</td>
+                            <td style="padding: 1.25rem; color: #10b981; font-weight: 700;">${{ b.amount_usd }}</td>
+                            <td style="padding: 1.25rem;">
+                                {% if b.status == 'confirmed' %}
+                                    <span style="color: #10b981; font-size: 0.85rem; font-weight: 600; background: rgba(16,185,129,0.1); padding: 0.4rem 0.75rem; border-radius: 0.5rem; border: 1px solid rgba(16,185,129,0.2);">Confirmed</span>
+                                {% elif b.status == 'cancelled' %}
+                                    <span style="color: #ef4444; font-size: 0.85rem; font-weight: 600; background: rgba(239,68,68,0.1); padding: 0.4rem 0.75rem; border-radius: 0.5rem; border: 1px solid rgba(239,68,68,0.2);">Cancelled</span>
+                                {% else %}
+                                    <span style="color: #fbbf24; font-size: 0.85rem; font-weight: 600; background: rgba(245,158,11,0.1); padding: 0.4rem 0.75rem; border-radius: 0.5rem; border: 1px solid rgba(245,158,11,0.2);">{{ b.status|title }}</span>
+                                {% endif %}
+                            </td>
+                            <td style="padding: 1.25rem; text-align: right;">
+                                {% if b.status == 'pending' or b.status == 'awaiting_confirmation' %}
+                                    <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                                        <button onclick="updateStatus({{ b.id }}, 'confirmed')" class="btn btn-sm" style="background: rgba(16,185,129,0.2); color: #10b981; border: 1px solid rgba(16,185,129,0.3);">Accept</button>
+                                        <button onclick="updateStatus({{ b.id }}, 'cancelled')" class="btn btn-sm" style="background: rgba(239,68,68,0.2); color: #ef4444; border: 1px solid rgba(239,68,68,0.3);">Decline</button>
+                                    </div>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div style="text-align: center; padding: 5rem 2rem; background: rgba(0,0,0,0.1); border-radius: 1.5rem; border: 1px dashed rgba(255,255,255,0.1);">
+                <i data-lucide="calendar-x" style="width: 48px; height: 48px; color: #4b5563; margin-bottom: 1.5rem;"></i>
+                <h3 style="color: white; font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem;">No Bookings Yet</h3>
+                <p style="color: #9ca3af; font-size: 1.1rem;">Your professional journey is just beginning. Keep your profile updated to attract more travelers!</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+async function updateStatus(bookingId, status) {
+    const statusMsg = document.getElementById('status-message');
+    try {
+        const response = await fetch(`/api/bookings/${bookingId}/status`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ status: status })
+        });
+        
+        const data = await response.json();
+        if (response.ok) {
+            statusMsg.style.display = 'block';
+            statusMsg.style.background = 'rgba(16,185,129,0.1)';
+            statusMsg.style.color = '#10b981';
+            statusMsg.style.border = '1px solid rgba(16,185,129,0.2)';
+            statusMsg.textContent = data.message;
+            setTimeout(() => window.location.reload(), 1500);
+        } else {
+            throw new Error(data.error || 'Failed to update status');
+        }
+    } catch (err) {
+        statusMsg.style.display = 'block';
+        statusMsg.style.background = 'rgba(239,68,68,0.1)';
+        statusMsg.style.color = '#ef4444';
+        statusMsg.style.border = '1px solid rgba(239,68,68,0.2)';
+        statusMsg.textContent = err.message;
+    }
+}
+</script>
+{% endblock %}

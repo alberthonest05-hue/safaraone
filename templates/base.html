@@ -42,7 +42,7 @@
       {% if current_user_role == 'guide' %}
         <li><a href="/dashboard" class="nav-link">My Dashboard</a></li>
         <li><a href="/dashboard/bookings" class="nav-link">Active Bookings</a></li>
-        <li><a href="/api/guides/me" class="nav-link">Edit Profile</a></li>
+        <li><a href="/dashboard/edit-profile" class="nav-link">Edit Profile</a></li>
       {% elif current_user_role == 'admin' %}
         <li><a href="/admin" class="nav-link">Admin Panel</a></li>
         <li><a href="{{ url_for('destinations') }}" class="nav-link">Destinations</a></li>

@@ -866,6 +866,63 @@ def guide_dashboard():
         import traceback
         print('GUIDE DASHBOARD ERROR:', traceback.format_exc())
         return f'Dashboard error: {str(e)}', 500
+@app.route('/dashboard/bookings')
+@jwt_required(optional=True)
+def guide_bookings():
+    user_id = get_jwt_identity()
+    if not user_id:
+        return redirect(url_for('auth'))
+    user = db.session.get(User, int(user_id))
+    if not user or user.role != 'guide':
+        return redirect(url_for('index'))
+    guide = Guide.query.filter_by(user_id=int(user_id)).first()
+    if not guide:
+        return redirect(url_for('guide_dashboard'))
+    bookings = Booking.query.filter_by(item_type='guide', item_id=guide.id).all()
+    return render_template('guide_bookings.html', bookings=bookings, guide=guide.to_dict())
+
+
+@app.route('/dashboard/edit-profile')
+@jwt_required(optional=True)
+def guide_edit_profile():
+    user_id = get_jwt_identity()
+    if not user_id:
+        return redirect(url_for('auth'))
+    user = db.session.get(User, int(user_id))
+    if not user or user.role != 'guide':
+        return redirect(url_for('index'))
+    guide = Guide.query.filter_by(user_id=int(user_id)).first()
+    if not guide:
+        return redirect(url_for('guide_dashboard'))
+    destinations = [d.to_dict() for d in Destination.query.all()]
+    return render_template('guide_edit_profile.html', guide=guide.to_dict(), destinations=destinations)
+
+
+@app.route("/api/bookings/<int:booking_id>/status", methods=["POST"])
+@jwt_required()
+def api_update_booking_status(booking_id):
+    user_id = int(get_jwt_identity())
+    user = db.session.get(User, user_id)
+    if not user or user.role != "guide":
+        return jsonify({"error": "Unauthorized"}), 403
+        
+    data = request.get_json()
+    new_status = data.get("status")
+    if new_status not in ["confirmed", "cancelled", "completed"]:
+        return jsonify({"error": "Invalid status"}), 400
+        
+    booking = db.session.get(Booking, booking_id)
+    if not booking:
+        return jsonify({"error": "Booking not found"}), 404
+        
+    # Ensure this booking belongs to the guide
+    guide = Guide.query.filter_by(user_id=user_id).first()
+    if not guide or booking.item_id != guide.id or booking.item_type != 'guide':
+        return jsonify({"error": "Unauthorized"}), 403
+        
+    booking.status = new_status
+    db.session.commit()
+    return jsonify({"message": f"Booking {booking_id} updated to {new_status}"})
 
 
 if __name__ == "__main__":
