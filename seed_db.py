@@ -6,9 +6,6 @@ from data.mock_data import DESTINATIONS, ACCOMMODATIONS, EXPERIENCES, GUIDES
 
 def seed():
     with app.app_context():
-        # Create all tables safely (ignores if they exist)
-        db.create_all()
-
         # THE FIX: Safety check - only seed if the marketplace is empty!
         # We check for Destinations because that is what fills the main site pages.
         if Destination.query.first():

@@ -29,10 +29,17 @@ CORS(app, supports_credentials=True)
 
 # Database Configuration
 db_url = os.environ.get('DATABASE_URL', 'sqlite:///safaraone.db')
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+if db_url.startswith('postgres://'):
+    db_url = db_url.replace('postgres://', 'postgresql://', 1)
 
-app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'connect_args': {
+        'sslmode': 'require'
+    },
+    'pool_pre_ping': True,
+    'pool_recycle': 300,
+}
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # JWT Configuration
