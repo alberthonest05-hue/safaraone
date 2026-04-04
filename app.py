@@ -779,10 +779,21 @@ def guide_dashboard():
         return render_template('guide_credentials.html', destinations=destinations)
     # Full dashboard
     bookings = Booking.query.filter_by(item_type='guide', item_id=guide.id).all()
-    total_earnings = sum(b.amount_usd * 0.8 for b in bookings if b.status == 'completed')
-    pending = [b for b in bookings if b.status == 'confirmed']
+    
+    # THE FIX: Add safe fallbacks before rendering to prevent template crashes
+    guide_dict = guide.to_dict()
+    guide_dict['avatar_url'] = guide_dict.get('avatar_url') or 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=400'
+    guide_dict['languages'] = guide_dict.get('languages') or []
+    guide_dict['specializations'] = guide_dict.get('specializations') or []
+    guide_dict['title'] = guide_dict.get('title') or 'SafaraOne Guide'
+    guide_dict['rating'] = guide_dict.get('rating') or 0.0
+    guide_dict['total_reviews'] = guide_dict.get('total_reviews') or 0
+
+    total_earnings = sum(b.amount_usd * 0.8 for b in (bookings or []) if b.status == 'completed')
+    pending = [b for b in (bookings or []) if b.status == 'confirmed']
+    
     return render_template('guide_dashboard.html',
-        guide=guide.to_dict(),
+        guide=guide_dict,
         bookings=bookings,
         total_earnings=round(total_earnings, 2),
         pending_bookings=pending

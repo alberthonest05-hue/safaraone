@@ -5,7 +5,7 @@
 <div style="max-width: 1200px; margin: 2rem auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 2rem;">
     <!-- Welcome Header -->
     <div style="background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border-radius: 1.5rem; border: 1px solid rgba(255,255,255,0.1); padding: 2rem; display: flex; align-items: start; gap: 2rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);">
-        <img src="{{ guide.avatar_url }}" alt="{{ guide.name }}'s Avatar" style="width: 120px; height: 120px; border-radius: 1rem; object-fit: cover; border: 2px solid var(--amber);">
+        <img src="{{ guide.avatar_url or '' }}" alt="{{ guide.name }}'s Avatar" style="width: 120px; height: 120px; border-radius: 1rem; object-fit: cover; border: 2px solid var(--amber);">
         <div style="flex-grow: 1;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                 <h1 style="font-size: 2rem; font-weight: 800; color: white;">Welcome back, {{ guide.name }}!</h1>
@@ -41,7 +41,7 @@
              <div style="margin-bottom: 1.5rem;">
                 <label style="display: block; color: #6b7280; font-size: 0.75rem; text-transform: uppercase; font-weight: 700; margin-bottom: 0.5rem;">Languages Spoken</label>
                 <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                    {% for lang in guide.languages %}
+                    {% for lang in (guide.languages or []) %}
                         <span style="background: rgba(255,255,255,0.08); color: white; padding: 0.25rem 0.75rem; border-radius: 0.5rem; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.1);">{{ lang }}</span>
                     {% endfor %}
                 </div>
@@ -68,7 +68,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for b in bookings %}
+                            {% for b in (bookings or []) %}
                             <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
                                 <td style="padding: 1rem; color: white; font-family: monospace; font-size: 0.85rem;">BK-{{ b.id }}</td>
                                 <td style="padding: 1rem; color: white;">{{ b.num_guests }} Adults</td>
