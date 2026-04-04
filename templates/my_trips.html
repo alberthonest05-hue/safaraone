@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>My Trips · SafaraOne</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0a1628, #1a2a4a, #0d3b2e);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: #fff;
+      padding: 2rem 1rem;
+    }
+
+    .container { max-width: 800px; margin: 0 auto; }
+
+    .back-link {
+      display: inline-block;
+      color: rgba(255,255,255,0.4);
+      text-decoration: none;
+      font-size: 0.85rem;
+      margin-bottom: 1.5rem;
+    }
+    .back-link:hover { color: #fff; }
+
+    .page-header { margin-bottom: 2rem; }
+    .page-header h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 0.3rem; }
+    .page-header p  { color: rgba(255,255,255,0.5); font-size: 0.95rem; }
+
+    .empty-state {
+      background: rgba(255,255,255,0.05);
+      border: 1px dashed rgba(255,255,255,0.15);
+      border-radius: 20px;
+      padding: 3rem 2rem;
+      text-align: center;
+    }
+    .empty-state .icon { font-size: 3rem; margin-bottom: 1rem; }
+    .empty-state h3   { font-size: 1.2rem; margin-bottom: 0.5rem; }
+    .empty-state p    { color: rgba(255,255,255,0.45); font-size: 0.9rem; margin-bottom: 1.5rem; }
+
+    .btn-explore {
+      display: inline-block;
+      background: linear-gradient(135deg, #4ade80, #16a34a);
+      color: #fff;
+      padding: 0.75rem 1.8rem;
+      border-radius: 12px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .btn-explore:hover { opacity: 0.88; }
+
+    .trips-list { display: flex; flex-direction: column; gap: 1rem; }
+
+    .trip-card {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 18px;
+      padding: 1.2rem 1.4rem;
+      display: flex;
+      gap: 1.2rem;
+      align-items: center;
+      backdrop-filter: blur(12px);
+    }
+
+    .trip-thumb {
+      width: 64px;
+      height: 64px;
+      border-radius: 12px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.05);
+    }
+
+    .trip-info    { flex: 1; min-width: 0; }
+    .trip-meta    { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.3rem; }
+    .trip-name    { font-weight: 600; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .trip-details { font-size: 0.82rem; color: rgba(255,255,255,0.45); margin-top: 0.25rem; }
+    .trip-price   { font-size: 1.05rem; font-weight: 700; color: #4ade80; white-space: nowrap; flex-shrink: 0; }
+
+    .badge {
+      font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.06em; border-radius: 20px; padding: 2px 8px;
+    }
+    .badge-type     { background: rgba(74,222,128,0.12); color: #4ade80; border: 1px solid rgba(74,222,128,0.2); }
+    .badge-pending  { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); }
+    .badge-confirmed{ background: rgba(74,222,128,0.15); color: #4ade80; border: 1px solid rgba(74,222,128,0.25); }
+    .badge-completed{ background: rgba(99,102,241,0.15); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.25); }
+    .badge-cancelled{ background: rgba(239,68,68,0.12);  color: #fca5a5; border: 1px solid rgba(239,68,68,0.2); }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <a href="/" class="back-link">← Back to Home</a>
+
+  <div class="page-header">
+    <h1>My Trips</h1>
+    <p>Welcome back, {{ username }}. All your SafaraOne bookings in one place.</p>
+  </div>
+
+  {% if not bookings %}
+  <div class="empty-state">
+    <div class="icon">🧭</div>
+    <h3>No trips yet</h3>
+    <p>Your confirmed bookings will appear here once you book a guide, stay, or experience.</p>
+    <a href="/guides" class="btn-explore">Explore Guides</a>
+  </div>
+
+  {% else %}
+  <div class="trips-list">
+    {% for b in bookings %}
+    <div class="trip-card">
+      <img class="trip-thumb"
+           src="{{ b.item_image or 'https://images.unsplash.com/photo-1506929562872-bb421503ef21?w=200' }}"
+           alt="{{ b.item_name }}"
+           onerror="this.src='https://images.unsplash.com/photo-1506929562872-bb421503ef21?w=200'">
+      <div class="trip-info">
+        <div class="trip-meta">
+          <span class="badge badge-type">{{ b.item_type }}</span>
+          <span class="badge badge-{{ b.status }}">{{ b.status }}</span>
+        </div>
+        <div class="trip-name">{{ b.item_name }}</div>
+        <div class="trip-details">
+          📅 {{ b.scheduled_date }} &nbsp;·&nbsp;
+          👥 {{ b.num_guests }} guest(s) &nbsp;·&nbsp;
+          Booked {{ b.booking_date }}
+        </div>
+      </div>
+      <div class="trip-price">${{ "%.2f"|format(b.amount_usd) }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+</body>
+</html>

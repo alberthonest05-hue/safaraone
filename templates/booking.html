@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Book · SafaraOne</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0a1628 0%, #1a2a4a 50%, #0d3b2e 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      padding: 2rem 1rem;
+    }
+
+    .checkout-wrapper {
+      width: 100%;
+      max-width: 500px;
+    }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: rgba(255,255,255,0.5);
+      text-decoration: none;
+      font-size: 0.85rem;
+      margin-bottom: 1.2rem;
+      transition: color 0.2s;
+    }
+    .back-link:hover { color: #fff; }
+
+    .card {
+      background: rgba(255,255,255,0.06);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 24px;
+      padding: 2rem;
+      box-shadow: 0 32px 64px rgba(0,0,0,0.5);
+      color: #fff;
+    }
+
+    .item-summary {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      margin-bottom: 1.8rem;
+    }
+
+    .item-thumb {
+      width: 72px;
+      height: 72px;
+      border-radius: 14px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.05);
+    }
+
+    .item-info { flex: 1; min-width: 0; }
+
+    .item-badge {
+      display: inline-block;
+      background: rgba(74,222,128,0.15);
+      color: #4ade80;
+      border: 1px solid rgba(74,222,128,0.25);
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.4rem;
+    }
+
+    .item-name {
+      font-size: 1.1rem;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .item-base-price {
+      font-size: 0.85rem;
+      color: rgba(255,255,255,0.5);
+      margin-top: 0.2rem;
+    }
+
+    .item-base-price strong { color: rgba(255,255,255,0.85); }
+
+    .field { margin-bottom: 1.4rem; }
+
+    .field label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 0.5rem;
+    }
+
+    .field input[type="date"] {
+      width: 100%;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      padding: 0.8rem 1rem;
+      color: #fff;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+      color-scheme: dark;
+    }
+    .field input[type="date"]:focus { border-color: #4ade80; }
+
+    .guest-row {
+      display: flex;
+      align-items: center;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      overflow: hidden;
+      width: fit-content;
+    }
+
+    .guest-btn {
+      background: none;
+      border: none;
+      color: #fff;
+      width: 44px;
+      height: 44px;
+      font-size: 1.3rem;
+      cursor: pointer;
+      transition: background 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .guest-btn:hover { background: rgba(74,222,128,0.15); }
+    .guest-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    .guest-count {
+      width: 48px;
+      text-align: center;
+      font-size: 1rem;
+      font-weight: 700;
+      border-left: 1px solid rgba(255,255,255,0.1);
+      border-right: 1px solid rgba(255,255,255,0.1);
+      height: 44px;
+      line-height: 44px;
+    }
+
+    .breakdown {
+      background: rgba(0,0,0,0.25);
+      border-radius: 14px;
+      padding: 1.2rem 1.3rem;
+      margin: 1.8rem 0;
+    }
+
+    .breakdown-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.9rem;
+      color: rgba(255,255,255,0.55);
+      margin-bottom: 0.6rem;
+    }
+    .breakdown-row:last-child { margin-bottom: 0; }
+
+    .breakdown-row.total {
+      border-top: 1px solid rgba(255,255,255,0.1);
+      padding-top: 0.8rem;
+      margin-top: 0.6rem;
+      color: #fff;
+      font-size: 1.05rem;
+      font-weight: 700;
+    }
+
+    .breakdown-row.total .amount {
+      color: #4ade80;
+      font-size: 1.2rem;
+    }
+
+    .alert {
+      border-radius: 10px;
+      padding: 0.8rem 1rem;
+      font-size: 0.88rem;
+      margin-bottom: 1.2rem;
+      display: none;
+    }
+    .alert.error {
+      background: rgba(239,68,68,0.15);
+      border: 1px solid rgba(239,68,68,0.3);
+      color: #fca5a5;
+    }
+    .alert.success {
+      background: rgba(74,222,128,0.15);
+      border: 1px solid rgba(74,222,128,0.3);
+      color: #86efac;
+    }
+
+    .confirm-btn {
+      width: 100%;
+      padding: 1rem;
+      background: linear-gradient(135deg, #4ade80, #16a34a);
+      border: none;
+      border-radius: 14px;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.02em;
+      transition: opacity 0.2s, transform 0.15s;
+    }
+    .confirm-btn:hover:not(:disabled) {
+      opacity: 0.92;
+      transform: translateY(-1px);
+    }
+    .confirm-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .secure-note {
+      text-align: center;
+      font-size: 0.78rem;
+      color: rgba(255,255,255,0.3);
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="checkout-wrapper">
+  <a href="javascript:history.back()" class="back-link">← Back</a>
+
+  <div class="card">
+
+    <div class="item-summary">
+      <img class="item-thumb"
+           src="{{ item_image }}"
+           alt="{{ item_name }}"
+           onerror="this.src='https://images.unsplash.com/photo-1506929562872-bb421503ef21?w=200'">
+      <div class="item-info">
+        <div class="item-badge">{{ item_type }}</div>
+        <div class="item-name">{{ item_name }}</div>
+        <div class="item-base-price">
+          <strong>${{ "%.2f"|format(item_price) }}</strong> {{ item_label }}
+        </div>
+      </div>
+    </div>
+
+    <div id="alertBox" class="alert"></div>
+
+    <div class="field">
+      <label>Trip Date</label>
+      <input type="date" id="scheduledDate">
+    </div>
+
+    <div class="field">
+      <label>Number of Guests</label>
+      <div class="guest-row">
+        <button class="guest-btn" id="btnMinus" onclick="changeGuests(-1)" disabled>−</button>
+        <div class="guest-count" id="guestDisplay">1</div>
+        <button class="guest-btn" onclick="changeGuests(1)">+</button>
+      </div>
+    </div>
+
+    <div class="breakdown">
+      <div class="breakdown-row">
+        <span>${{ "%.2f"|format(item_price) }} × <span id="guestLabel">1</span> guest(s)</span>
+        <span id="subtotalDisplay">${{ "%.2f"|format(item_price) }}</span>
+      </div>
+      <div class="breakdown-row">
+        <span>SafaraOne service fee (5%)</span>
+        <span id="feeDisplay">$0.00</span>
+      </div>
+      <div class="breakdown-row total">
+        <span>Total</span>
+        <span class="amount" id="totalDisplay">${{ "%.2f"|format(item_price) }}</span>
+      </div>
+    </div>
+
+    <button class="confirm-btn" id="confirmBtn" onclick="confirmBooking()">
+      Confirm Booking
+    </button>
+
+    <p class="secure-note">🔒 Secured by Stripe · SafaraOne</p>
+
+  </div>
+</div>
+
+<script>
+  const BASE_PRICE = {{ item_price }};
+  const ITEM_TYPE  = "{{ item_type }}";
+  const ITEM_ID    = "{{ item_id }}";
+  const FEE_RATE   = 0.05;
+
+  let guests = 1;
+
+  // Set minimum date to today
+  document.getElementById('scheduledDate').min = new Date().toISOString().split('T')[0];
+
+  function changeGuests(delta) {
+    guests = Math.max(1, Math.min(20, guests + delta));
+    document.getElementById('guestDisplay').textContent = guests;
+    document.getElementById('guestLabel').textContent   = guests;
+    document.getElementById('btnMinus').disabled        = guests === 1;
+    updateCosts();
+  }
+
+  function updateCosts() {
+    const subtotal = BASE_PRICE * guests;
+    const fee      = subtotal * FEE_RATE;
+    const total    = subtotal + fee;
+    document.getElementById('subtotalDisplay').textContent = '$' + subtotal.toFixed(2);
+    document.getElementById('feeDisplay').textContent      = '$' + fee.toFixed(2);
+    document.getElementById('totalDisplay').textContent    = '$' + total.toFixed(2);
+  }
+
+  function getTotal() {
+    return parseFloat(((BASE_PRICE * guests) * (1 + FEE_RATE)).toFixed(2));
+  }
+
+  function showAlert(msg, type) {
+    const box = document.getElementById('alertBox');
+    box.textContent  = msg;
+    box.className    = 'alert ' + type;
+    box.style.display = 'block';
+  }
+
+  async function confirmBooking() {
+    const date = document.getElementById('scheduledDate').value;
+    if (!date) {
+      showAlert('Please select a trip date before confirming.', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('confirmBtn');
+    btn.disabled    = true;
+    btn.textContent = 'Processing…';
+
+    try {
+      const res = await fetch('/api/bookings', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item_type:      ITEM_TYPE,
+          item_id:        ITEM_ID,
+          scheduled_date: date,
+          num_guests:     guests,
+          total_price:    getTotal()
+        })
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        showAlert('Booking confirmed! Redirecting to your trips…', 'success');
+        setTimeout(() => { window.location.href = '/my-trips'; }, 1800);
+      } else {
+        showAlert(data.error || 'Something went wrong. Please try again.', 'error');
+        btn.disabled    = false;
+        btn.textContent = 'Confirm Booking';
+      }
+    } catch (err) {
+      showAlert('Network error — please check your connection and try again.', 'error');
+      btn.disabled    = false;
+      btn.textContent = 'Confirm Booking';
+    }
+  }
+</script>
+
+</body>
+</html>

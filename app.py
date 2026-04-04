@@ -313,6 +313,54 @@ def guides():
     )
 
 
+@app.route('/book/<item_type>/<item_id>')
+@jwt_required(optional=True)
+def book_item(item_type, item_id):
+    # Fully gated — unauthenticated users go to login immediately
+    user_id = get_jwt_identity()
+    if not user_id:
+        return redirect(url_for('auth'))
+
+    item = None
+    if item_type == 'guide':
+        item = db.session.get(Guide, item_id)
+    elif item_type == 'accommodation':
+        item = db.session.get(Accommodation, item_id)
+    elif item_type == 'experience':
+        item = db.session.get(Experience, item_id)
+
+    if not item:
+        return redirect(url_for('index'))
+
+    raw = item.to_dict()
+
+    # Normalize price — each model uses a different field name
+    if item_type == 'guide':
+        display_price = raw.get('price_per_day_usd', 0)
+        display_label = 'per day'
+    elif item_type == 'accommodation':
+        display_price = raw.get('price_per_night_usd', 0)
+        display_label = 'per night'
+    else:  # experience
+        display_price = raw.get('price_usd', 0)
+        display_label = 'per person'
+
+    # Normalize name — Experience uses 'title', others use 'name'
+    display_name = raw.get('name') or raw.get('title', 'Item')
+
+    # Normalize image — Guide uses avatar_url, others use image_url
+    display_image = raw.get('avatar_url') or raw.get('image_url', '')
+
+    return render_template('booking.html',
+        item_type=item_type,
+        item_id=item_id,
+        item_name=display_name,
+        item_price=display_price,
+        item_label=display_label,
+        item_image=display_image
+    )
+
+
 @app.route("/planner")
 def planner():
     """AI Budget Planner page."""
@@ -432,37 +480,44 @@ def api_create_booking():
     VALID_ITEM_TYPES = {"accommodation", "experience", "guide"}
     data = request.get_json()
     user_id = int(get_jwt_identity())
-    
-    item_type = data.get("item_type")
-    amount_usd = float(data.get("amount_usd", 0))
-    item_id = data.get("item_id")
-    
+
+    item_type   = data.get("item_type")
+    item_id     = data.get("item_id")
+    num_guests  = int(data.get("num_guests", 1))
+    total_price = data.get("total_price")
+    scheduled_date_str = data.get("scheduled_date")
+
+    # Validation
     if not item_type or item_type not in VALID_ITEM_TYPES:
         return jsonify({"error": "Invalid or missing item_type"}), 400
-    if amount_usd <= 0:
-        return jsonify({"error": "Amount must be greater than 0"}), 400
     if not item_id:
         return jsonify({"error": "Missing item_id"}), 400
-    
-    scheduled_date_str = data.get("scheduled_date")
+    if total_price is None or float(total_price) <= 0:
+        return jsonify({"error": "Amount must be greater than 0"}), 400
+
     scheduled_date = None
     if scheduled_date_str:
         try:
             scheduled_date = datetime.fromisoformat(scheduled_date_str)
         except ValueError:
-            pass
+            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
 
-    booking = Booking(
-        user_id=user_id,
-        item_type=data.get("item_type"),   # 'guide', 'accommodation', 'experience'
-        item_id=data.get("item_id"),
-        amount_usd=float(data.get("amount_usd", 0)),
-        num_guests=int(data.get("num_guests", 1)),
-        scheduled_date=scheduled_date
-    )
-    db.session.add(booking)
-    db.session.commit()
-    return jsonify({"booking_id": booking.id}), 201
+    try:
+        booking = Booking(
+            user_id=user_id,
+            item_type=item_type,
+            item_id=str(item_id),
+            amount_usd=float(total_price),
+            num_guests=num_guests,
+            scheduled_date=scheduled_date,
+            status="pending"
+        )
+        db.session.add(booking)
+        db.session.commit()
+        return jsonify({"message": "Booking created", "booking_id": booking.id}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/checkout", methods=["POST"])
 @jwt_required()
@@ -992,6 +1047,54 @@ def api_update_booking_status(booking_id):
     booking.status = new_status
     db.session.commit()
     return jsonify({"message": f"Booking {booking_id} updated to {new_status}"})
+
+
+@app.route('/my-trips')
+@jwt_required(optional=True)
+def my_trips():
+    user_id = get_jwt_identity()
+    if not user_id:
+        return redirect(url_for('auth'))
+
+    user = db.session.get(User, int(user_id))
+    if not user:
+        return redirect(url_for('auth'))
+
+    bookings = Booking.query.filter_by(user_id=int(user_id)).order_by(Booking.booking_date.desc()).all()
+
+    enriched = []
+    for b in bookings:
+        item_name  = b.item_id   # safe fallback
+        item_image = ''
+        if b.item_type == 'guide':
+            item = db.session.get(Guide, b.item_id)
+            if item:
+                item_name  = item.name
+                item_image = item.avatar_url or ''
+        elif b.item_type == 'accommodation':
+            item = db.session.get(Accommodation, b.item_id)
+            if item:
+                item_name  = item.name
+                item_image = item.image_url or ''
+        elif b.item_type == 'experience':
+            item = db.session.get(Experience, b.item_id)
+            if item:
+                item_name  = item.title
+                item_image = item.image_url or ''
+
+        enriched.append({
+            'id':             b.id,
+            'item_type':      b.item_type,
+            'item_name':      item_name,
+            'item_image':     item_image,
+            'amount_usd':     b.amount_usd,
+            'num_guests':     b.num_guests,
+            'status':         b.status,
+            'scheduled_date': b.scheduled_date.strftime('%b %d, %Y') if b.scheduled_date else 'TBD',
+            'booking_date':   b.booking_date.strftime('%b %d, %Y') if b.booking_date else ''
+        })
+
+    return render_template('my_trips.html', bookings=enriched, username=user.username)
 
 
 if __name__ == "__main__":
