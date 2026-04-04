@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Payment Confirmed · SafaraOne</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0a1628 0%, #1a2a4a 50%, #0d3b2e 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      padding: 2rem 1rem;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.07);
+      backdrop-filter: blur(24px);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 28px;
+      padding: 3rem 2.5rem;
+      max-width: 460px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 32px 64px rgba(0,0,0,0.5);
+      color: #fff;
+    }
+
+    .check-ring {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: rgba(74,222,128,0.15);
+      border: 2px solid rgba(74,222,128,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1.5rem;
+      font-size: 2.2rem;
+      animation: popIn 0.5s cubic-bezier(0.34,1.56,0.64,1) both;
+    }
+
+    @keyframes popIn {
+      from { transform: scale(0); opacity: 0; }
+      to   { transform: scale(1); opacity: 1; }
+    }
+
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      color: rgba(255,255,255,0.5);
+      font-size: 0.95rem;
+      margin-bottom: 2rem;
+      line-height: 1.5;
+    }
+
+    .booking-summary {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 2rem;
+      text-align: left;
+    }
+
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.45rem 0;
+      font-size: 0.9rem;
+      color: rgba(255,255,255,0.7);
+    }
+    .summary-row:not(:last-child) {
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .summary-row .label { color: rgba(255,255,255,0.45); }
+    .summary-row .value { font-weight: 600; color: #fff; }
+    .summary-row .value.green { color: #4ade80; }
+
+    .badge-confirmed {
+      display: inline-block;
+      background: rgba(74,222,128,0.15);
+      color: #4ade80;
+      border: 1px solid rgba(74,222,128,0.3);
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      padding: 3px 10px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-direction: column;
+    }
+
+    .btn-primary {
+      display: block;
+      background: linear-gradient(135deg, #4ade80, #16a34a);
+      color: #fff;
+      text-decoration: none;
+      padding: 0.85rem 1.5rem;
+      border-radius: 14px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      transition: opacity 0.2s;
+    }
+    .btn-primary:hover { opacity: 0.88; }
+
+    .btn-secondary {
+      display: block;
+      color: rgba(255,255,255,0.45);
+      text-decoration: none;
+      padding: 0.65rem;
+      font-size: 0.88rem;
+      transition: color 0.2s;
+    }
+    .btn-secondary:hover { color: #fff; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="check-ring">✓</div>
+  <h1>You're all set!</h1>
+  <p class="subtitle">
+    Your payment was processed successfully.<br>
+    Your guide will be in touch before the trip.
+  </p>
+
+  {% if booking %}
+  <div class="booking-summary">
+    <div class="summary-row">
+      <span class="label">Booking</span>
+      <span class="value">#{{ booking.id }}</span>
+    </div>
+    <div class="summary-row">
+      <span class="label">Item</span>
+      <span class="value">{{ booking.item_name }}</span>
+    </div>
+    <div class="summary-row">
+      <span class="label">Date</span>
+      <span class="value">{{ booking.scheduled_date }}</span>
+    </div>
+    <div class="summary-row">
+      <span class="label">Guests</span>
+      <span class="value">{{ booking.num_guests }}</span>
+    </div>
+    <div class="summary-row">
+      <span class="label">Total paid</span>
+      <span class="value green">${{ "%.2f"|format(booking.amount_usd) }}</span>
+    </div>
+    <div class="summary-row">
+      <span class="label">Status</span>
+      <span class="value"><span class="badge-confirmed">{{ booking.status }}</span></span>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="actions">
+    <a href="/my-trips" class="btn-primary">View My Trips →</a>
+    <a href="/" class="btn-secondary">← Back to Home</a>
+  </div>
+</div>
+
+</body>
+</html>

@@ -263,7 +263,7 @@
 
     <div class="field">
       <label>Trip Date</label>
-      <input type="date" id="scheduledDate">
+      <input type="date" id="trip-date">
     </div>
 
     <div class="field">
@@ -290,8 +290,8 @@
       </div>
     </div>
 
-    <button class="confirm-btn" id="confirmBtn" onclick="confirmBooking()">
-      Confirm Booking
+    <button class="confirm-btn" id="confirm-btn" onclick="confirmBooking()">
+      Proceed to Payment →
     </button>
 
     <p class="secure-note">🔒 Secured by Stripe · SafaraOne</p>
@@ -303,12 +303,15 @@
   const BASE_PRICE = {{ item_price }};
   const ITEM_TYPE  = "{{ item_type }}";
   const ITEM_ID    = "{{ item_id }}";
+  const ITEM_NAME  = "{{ item_name }}";
   const FEE_RATE   = 0.05;
 
   let guests = 1;
 
   // Set minimum date to today
-  document.getElementById('scheduledDate').min = new Date().toISOString().split('T')[0];
+  document.getElementById('trip-date').min = new Date().toISOString().split('T')[0];
+
+  function getGuests() { return guests; }
 
   function changeGuests(delta) {
     guests = Math.max(1, Math.min(20, guests + delta));
@@ -339,43 +342,44 @@
   }
 
   async function confirmBooking() {
-    const date = document.getElementById('scheduledDate').value;
-    if (!date) {
+    const dateVal = document.getElementById('trip-date').value;
+    if (!dateVal) {
       showAlert('Please select a trip date before confirming.', 'error');
       return;
     }
 
-    const btn = document.getElementById('confirmBtn');
+    const btn = document.getElementById('confirm-btn');
     btn.disabled    = true;
-    btn.textContent = 'Processing…';
+    btn.textContent = 'Redirecting to payment…';
 
     try {
-      const res = await fetch('/api/bookings', {
-        method:  'POST',
+      const res = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           item_type:      ITEM_TYPE,
           item_id:        ITEM_ID,
-          scheduled_date: date,
-          num_guests:     guests,
+          item_name:      ITEM_NAME,
+          scheduled_date: dateVal,
+          num_guests:     getGuests(),
           total_price:    getTotal()
         })
       });
 
       const data = await res.json();
 
-      if (res.ok) {
-        showAlert('Booking confirmed! Redirecting to your trips…', 'success');
-        setTimeout(() => { window.location.href = '/my-trips'; }, 1800);
+      if (res.ok && data.session_url) {
+        window.location.href = data.session_url;
       } else {
         showAlert(data.error || 'Something went wrong. Please try again.', 'error');
         btn.disabled    = false;
-        btn.textContent = 'Confirm Booking';
+        btn.textContent = 'Proceed to Payment →';
       }
     } catch (err) {
       showAlert('Network error — please check your connection and try again.', 'error');
       btn.disabled    = false;
-      btn.textContent = 'Confirm Booking';
+      btn.textContent = 'Proceed to Payment →';
     }
   }
 </script>

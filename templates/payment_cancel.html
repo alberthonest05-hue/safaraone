@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Payment Cancelled · SafaraOne</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0a1628 0%, #1a2a4a 50%, #0d3b2e 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      padding: 2rem 1rem;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.07);
+      backdrop-filter: blur(24px);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 28px;
+      padding: 3rem 2.5rem;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 32px 64px rgba(0,0,0,0.5);
+      color: #fff;
+    }
+
+    .icon-ring {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: rgba(251,191,36,0.12);
+      border: 2px solid rgba(251,191,36,0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1.5rem;
+      font-size: 2rem;
+    }
+
+    h1 {
+      font-size: 1.65rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
+    }
+
+    p {
+      color: rgba(255,255,255,0.5);
+      font-size: 0.93rem;
+      line-height: 1.6;
+      margin-bottom: 2rem;
+    }
+
+    .actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-direction: column;
+    }
+
+    .btn-primary {
+      display: block;
+      background: linear-gradient(135deg, #4ade80, #16a34a);
+      color: #fff;
+      text-decoration: none;
+      padding: 0.85rem 1.5rem;
+      border-radius: 14px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      transition: opacity 0.2s;
+    }
+    .btn-primary:hover { opacity: 0.88; }
+
+    .btn-secondary {
+      display: block;
+      color: rgba(255,255,255,0.4);
+      text-decoration: none;
+      padding: 0.65rem;
+      font-size: 0.88rem;
+      transition: color 0.2s;
+    }
+    .btn-secondary:hover { color: #fff; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="icon-ring">✕</div>
+  <h1>Payment cancelled</h1>
+  <p>
+    No charge was made. Your booking has been cancelled.<br>
+    You can try again anytime.
+  </p>
+  <div class="actions">
+    <a href="/guides" class="btn-primary">Browse Guides →</a>
+    <a href="/" class="btn-secondary">← Back to Home</a>
+  </div>
+</div>
+
+</body>
+</html>

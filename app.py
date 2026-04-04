@@ -19,6 +19,8 @@ from flask_jwt_extended import (
     set_access_cookies, unset_jwt_cookies
 )
 from flask_cors import CORS
+import stripe
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
 
 # Phase 2B: Use DB-constrained OpenAI Planner from services
 from services.planner import generate_itinerary
@@ -470,9 +472,7 @@ def api_get_guide(id):
 #  PHASE 2C: PAYMENTS & REVIEWS
 # ─────────────────────────────────────────────
 
-import stripe
 from datetime import datetime
-stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "sk_test_placeholder")
 
 @app.route("/api/bookings", methods=["POST"])
 @jwt_required()
@@ -1113,6 +1113,178 @@ def cancel_booking(booking_id):
     booking.status = 'cancelled'
     db.session.commit()
     return jsonify({"message": "Booking cancelled"}), 200
+
+
+@app.route('/api/create-checkout-session', methods=['POST'])
+@jwt_required()
+def create_checkout_session():
+    VALID_ITEM_TYPES = {"accommodation", "experience", "guide"}
+    data = request.get_json()
+    user_id = int(get_jwt_identity())
+
+    item_type          = data.get("item_type")
+    item_id            = data.get("item_id")
+    num_guests         = int(data.get("num_guests", 1))
+    total_price        = data.get("total_price")
+    scheduled_date_str = data.get("scheduled_date")
+    item_name          = data.get("item_name", "SafaraOne Booking")
+
+    # Validation
+    if not item_type or item_type not in VALID_ITEM_TYPES:
+        return jsonify({"error": "Invalid or missing item_type"}), 400
+    if not item_id:
+        return jsonify({"error": "Missing item_id"}), 400
+    if total_price is None or float(total_price) <= 0:
+        return jsonify({"error": "Amount must be greater than 0"}), 400
+
+    scheduled_date = None
+    if scheduled_date_str:
+        try:
+            scheduled_date = datetime.fromisoformat(scheduled_date_str)
+        except ValueError:
+            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+
+    # Step 1: Create the booking with status "pending"
+    try:
+        booking = Booking(
+            user_id=user_id,
+            item_type=item_type,
+            item_id=str(item_id),
+            amount_usd=float(total_price),
+            num_guests=num_guests,
+            scheduled_date=scheduled_date,
+            status="pending"
+        )
+        db.session.add(booking)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Could not create booking: {str(e)}"}), 500
+
+    # Step 2: Build redirect URLs
+    base = os.environ.get('APP_BASE_URL', request.host_url.rstrip('/'))
+    success_url = f"{base}/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url  = f"{base}/payment/cancel/{booking.id}"
+
+    # Step 3: Create Stripe Checkout Session
+    try:
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": int(float(total_price) * 100),  # Stripe uses cents
+                    "product_data": {
+                        "name": item_name,
+                        "description": f"SafaraOne booking · {num_guests} guest(s) · {scheduled_date_str or 'TBD'}",
+                    },
+                },
+                "quantity": 1,
+            }],
+            mode="payment",
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={
+                "booking_id": str(booking.id),
+                "user_id":    str(user_id),
+            }
+        )
+        return jsonify({"session_url": session.url, "booking_id": booking.id}), 200
+
+    except stripe.error.StripeError as e:
+        # Roll back the booking if Stripe session creation fails
+        db.session.delete(booking)
+        db.session.commit()
+        return jsonify({"error": str(e.user_message)}), 500
+
+
+@app.route('/api/stripe/webhook', methods=['POST'])
+def stripe_webhook():
+    payload    = request.get_data()
+    sig_header = request.headers.get('Stripe-Signature')
+    webhook_secret = os.environ.get('STRIPE_WEBHOOK_SECRET')
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+    except ValueError:
+        return jsonify({"error": "Invalid payload"}), 400
+    except stripe.error.SignatureVerificationError:
+        return jsonify({"error": "Invalid signature"}), 400
+
+    if event['type'] == 'checkout.session.completed':
+        session    = event['data']['object']
+        booking_id = session.get('metadata', {}).get('booking_id')
+
+        if booking_id:
+            booking = db.session.get(Booking, int(booking_id))
+            if booking and booking.status == 'pending':
+                booking.status = 'confirmed'
+                db.session.commit()
+
+    return jsonify({"status": "ok"}), 200
+
+
+@app.route('/payment/success')
+@jwt_required(optional=True)
+def payment_success():
+    user_id = get_jwt_identity()
+    if not user_id:
+        return redirect(url_for('auth'))
+
+    session_id = request.args.get('session_id')
+    booking_info = None
+
+    if session_id:
+        try:
+            session = stripe.checkout.Session.retrieve(session_id)
+            booking_id = session.get('metadata', {}).get('booking_id')
+            if booking_id:
+                b = db.session.get(Booking, int(booking_id))
+                if b and b.user_id == int(user_id):
+                    # Lookup item name
+                    item_name = b.item_id
+                    if b.item_type == 'guide':
+                        item = db.session.get(Guide, b.item_id)
+                        if item:
+                            item_name = item.name
+                    elif b.item_type == 'accommodation':
+                        item = db.session.get(Accommodation, b.item_id)
+                        if item:
+                            item_name = item.name
+                    elif b.item_type == 'experience':
+                        item = db.session.get(Experience, b.item_id)
+                        if item:
+                            item_name = item.title
+
+                    booking_info = {
+                        'id':             b.id,
+                        'item_name':      item_name,
+                        'item_type':      b.item_type,
+                        'amount_usd':     b.amount_usd,
+                        'num_guests':     b.num_guests,
+                        'scheduled_date': b.scheduled_date.strftime('%b %d, %Y') if b.scheduled_date else 'TBD',
+                        'status':         b.status,
+                    }
+        except Exception:
+            pass  # If anything fails, still show the success page without details
+
+    return render_template('payment_success.html', booking=booking_info)
+
+
+@app.route('/payment/cancel/<int:booking_id>')
+@jwt_required(optional=True)
+def payment_cancel(booking_id):
+    user_id = get_jwt_identity()
+    if not user_id:
+        return redirect(url_for('auth'))
+
+    # Cancel the pending booking that was created before Stripe redirect
+    booking = db.session.get(Booking, booking_id)
+    if booking and booking.user_id == int(user_id) and booking.status == 'pending':
+        booking.status = 'cancelled'
+        db.session.commit()
+
+    return render_template('payment_cancel.html')
 
 
 if __name__ == "__main__":
