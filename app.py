@@ -753,14 +753,15 @@ def api_make_admin():
 
 
 @app.route('/api/setup/force-seed')
+@app.route('/api/setup/force-seed')
 def force_seed():
-    """Manual trigger to seed the database after the first deployment."""
     try:
         from seed_db import seed
         seed()
-        return "Database successfully seeded!"
+        return 'Database seeded successfully!'
     except Exception as e:
-        return f"Seeding failed: {str(e)}"
+        import traceback
+        return f'Seeding failed: {traceback.format_exc()}'
 
 
 @app.route("/dashboard")
@@ -775,7 +776,22 @@ def guide_dashboard():
     guide = Guide.query.filter_by(user_id=user_id).first()
     # If guide has no profile or incomplete profile, show credentials form
     if not guide or not guide.bio or not guide.price_per_day_usd:
-        destinations = [d.to_dict() for d in Destination.query.all()]
+        try:
+            destinations = [d.to_dict() for d in Destination.query.all()]
+        except:
+            destinations = []
+        
+        # Always add hardcoded fallbacks so the dropdown never breaks
+        hardcoded = [
+            {'id': 'zanzibar', 'name': 'Zanzibar'},
+            {'id': 'serengeti', 'name': 'Serengeti'},
+            {'id': 'kilimanjaro', 'name': 'Mount Kilimanjaro'}
+        ]
+        existing_ids = [d['id'] for d in destinations]
+        for h in hardcoded:
+            if h['id'] not in existing_ids:
+                destinations.append(h)
+        
         return render_template('guide_credentials.html', destinations=destinations)
     # Full dashboard
     bookings = Booking.query.filter_by(item_type='guide', item_id=guide.id).all()
