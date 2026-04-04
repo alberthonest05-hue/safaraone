@@ -761,15 +761,44 @@ def api_make_admin():
 
 
 @app.route('/api/setup/force-seed')
-@app.route('/api/setup/force-seed')
 def force_seed():
     try:
-        from seed_db import seed
-        seed()
-        return 'Database seeded successfully!'
+        db.create_all()
+        
+        # Check if destinations already exist
+        dest_count = Destination.query.count()
+        if dest_count == 0:
+            from data.mock_data import DESTINATIONS, ACCOMMODATIONS, EXPERIENCES, GUIDES
+            
+            for d in DESTINATIONS:
+                # Filter out 'stats' field if it's not a model column
+                dest_data = {k: v for k, v in d.items() if k != 'stats'}
+                dest = Destination(**dest_data)
+                if 'stats' in d:
+                    dest.stats = d['stats']
+                db.session.add(dest)
+            db.session.commit()
+            
+            for a in ACCOMMODATIONS:
+                db.session.add(Accommodation(**a))
+            db.session.commit()
+            
+            for e in EXPERIENCES:
+                db.session.add(Experience(**e))
+            db.session.commit()
+            
+            for g in GUIDES:
+                db.session.add(Guide(**{k: v for k, v in g.items()}))
+            db.session.commit()
+            
+            return f'Seeded successfully! Destinations: {Destination.query.count()}'
+        else:
+            return f'Already seeded. Destinations: {dest_count}'
+            
     except Exception as e:
+        db.session.rollback()
         import traceback
-        return f'Seeding failed: {traceback.format_exc()}'
+        return f'Failed: {traceback.format_exc()}', 500
 
 
 @app.route('/dashboard')
