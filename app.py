@@ -392,7 +392,9 @@ def book_item(item_type, item_id):
         booking.item_name = display_name
         db.session.commit()
 
-    return render_template('booking.html', booking=booking, current_user=user)
+    from datetime import date as _date
+    return render_template('booking.html', booking=booking, current_user=user,
+                           today=_date.today().isoformat())
 
 
 @app.route("/planner")
@@ -1316,13 +1318,17 @@ def create_checkout_session():
     current_user_id = int(get_jwt_identity())
     data = request.get_json()
 
-    booking_id     = data.get('booking_id')
-    payment_method = data.get('payment_method', 'card')
-    currency       = data.get('currency', 'USD').upper()
-    phone_number   = data.get('phone_number', '')
+    booking_id      = data.get('booking_id')
+    payment_method  = data.get('payment_method', 'card')
+    currency        = data.get('currency', 'USD').upper()
+    phone_number    = data.get('phone_number', '')
+    scheduled_date  = data.get('scheduled_date', '')   # NEW — from date picker
+    num_guests      = int(data.get('num_guests', 1))   # NEW — nights/days/guests
 
     if not booking_id:
         return jsonify({'status': 'error', 'message': 'booking_id is required'}), 400
+    if not scheduled_date:
+        return jsonify({'status': 'error', 'message': 'Please select a date for your booking.'}), 400
 
     booking = Booking.query.filter_by(id=booking_id, user_id=current_user_id).first()
     if not booking:
@@ -1331,6 +1337,20 @@ def create_checkout_session():
         return jsonify({'status': 'error', 'message': 'Booking is not in pending state'}), 400
     if payment_method == 'mobile_money' and not phone_number:
         return jsonify({'status': 'error', 'message': 'phone_number is required for mobile money'}), 400
+
+    # Save date + guest count to booking
+    try:
+        from datetime import datetime as _dt
+        booking.scheduled_date = _dt.strptime(scheduled_date, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return jsonify({'status': 'error', 'message': 'Invalid date format. Use YYYY-MM-DD.'}), 400
+
+    booking.num_guests = num_guests
+    # amount_usd on the booking is the unit price (per night/day/person).
+    # Multiply by quantity to get the real total charged by Flutterwave.
+    unit_price = float(booking.amount_usd)
+    total_usd  = round(unit_price * num_guests, 2)
+    booking.amount_usd = total_usd
 
     user = db.session.get(User, current_user_id)
     if not user:

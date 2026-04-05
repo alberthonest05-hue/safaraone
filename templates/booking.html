@@ -13,16 +13,81 @@
       <p class="booking-subtitle">SafaraOne · Protected by Flutterwave</p>
     </div>
 
-    <!-- ── Order Summary ───────────────────────────────────────────────── -->
+    <!-- ── Step 1: Trip Details ────────────────────────────────────────── -->
+    <div class="step-label">STEP 1 — Trip Details</div>
+    <div class="details-card glass-inner">
+
+      <!-- Date picker -->
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="scheduledDate" id="dateLabel">
+            {% if booking.item_type == 'accommodation' %}📅 Check-in Date
+            {% elif booking.item_type == 'guide' %}📅 Trip Start Date
+            {% else %}📅 Visit Date{% endif %}
+          </label>
+          <input
+            type="date"
+            id="scheduledDate"
+            class="form-input"
+            min="{{ today }}"
+            required
+          />
+          <span class="field-hint">Required — choose your preferred date</span>
+        </div>
+
+        <!-- Quantity picker -->
+        <div class="form-group">
+          <label class="form-label" for="numGuests" id="quantityLabel">
+            {% if booking.item_type == 'accommodation' %}🌙 Number of Nights
+            {% elif booking.item_type == 'guide' %}📆 Number of Days
+            {% else %}👤 Number of Guests{% endif %}
+          </label>
+          <div class="quantity-row">
+            <button class="qty-btn" onclick="changeQty(-1)" type="button">−</button>
+            <input
+              type="number"
+              id="numGuests"
+              class="form-input qty-input"
+              value="1"
+              min="1"
+              max="30"
+              readonly
+            />
+            <button class="qty-btn" onclick="changeQty(1)" type="button">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Step 2: Order Summary ───────────────────────────────────────── -->
+    <div class="step-label">STEP 2 — Order Summary</div>
     <div class="summary-card glass-inner">
-      <h2 class="section-label">Order Summary</h2>
       <div class="summary-row">
         <span class="summary-label">{{ booking.item_type | capitalize }}</span>
         <span class="summary-value">{{ booking.item_name }}</span>
       </div>
       <div class="summary-row">
         <span class="summary-label">Date</span>
-        <span class="summary-value">{{ booking.scheduled_date or '—' }}</span>
+        <span class="summary-value" id="summaryDate">
+          <span class="placeholder-hint">Select a date above ↑</span>
+        </span>
+      </div>
+      <div class="summary-row">
+        <span class="summary-label" id="summaryQtyLabel">
+          {% if booking.item_type == 'accommodation' %}Nights
+          {% elif booking.item_type == 'guide' %}Days
+          {% else %}Guests{% endif %}
+        </span>
+        <span class="summary-value" id="summaryQty">1</span>
+      </div>
+      <div class="summary-row">
+        <span class="summary-label">Unit Price</span>
+        <span class="summary-value">
+          USD {{ "%.2f" | format(booking.amount_usd) }}
+          {% if booking.item_type == 'accommodation' %}/night
+          {% elif booking.item_type == 'guide' %}/day
+          {% else %}/person{% endif %}
+        </span>
       </div>
       <div class="summary-row">
         <span class="summary-label">Booking ID</span>
@@ -31,16 +96,19 @@
       <div class="summary-divider"></div>
       <div class="summary-total-row">
         <span class="total-label">Total</span>
-        <div>
-          <span class="total-usd" id="usdDisplay">USD {{ "%.2f" | format(booking.amount_usd) }}</span>
+        <div class="total-values">
+          <span class="total-usd" id="usdDisplay">USD <span id="usdValue">{{ "%.2f" | format(booking.amount_usd) }}</span></span>
           <span class="total-tzs" id="tzsDisplay" style="display:none;">TZS <span id="tzsValue">—</span></span>
         </div>
       </div>
     </div>
 
-    <!-- ── Currency Toggle ─────────────────────────────────────────────── -->
+    <!-- ── Step 3: Currency + Payment ─────────────────────────────────── -->
+    <div class="step-label">STEP 3 — Currency &amp; Payment</div>
+
+    <!-- Currency Toggle -->
     <div class="currency-toggle-row">
-      <span class="currency-label">Show price in:</span>
+      <span class="currency-label">Price in:</span>
       <div class="toggle-group">
         <button class="toggle-btn active" id="btnUSD" onclick="setCurrency('USD')">USD</button>
         <button class="toggle-btn"        id="btnTZS" onclick="setCurrency('TZS')">TZS</button>
@@ -48,47 +116,36 @@
       <span class="rate-note" id="rateNote"></span>
     </div>
 
-    <!-- ── Payment Method Tabs ─────────────────────────────────────────── -->
-    <div class="section-label">Payment Method</div>
+    <!-- Payment Method Tabs -->
     <div class="payment-tabs">
-      <button class="tab-btn active" id="tabCard"   onclick="setPaymentMethod('card')">
-        💳 Card
-      </button>
-      <button class="tab-btn"        id="tabMobile" onclick="setPaymentMethod('mobile_money')">
-        📱 Mobile Money
-      </button>
+      <button class="tab-btn active" id="tabCard"   onclick="setPaymentMethod('card')">💳 Card</button>
+      <button class="tab-btn"        id="tabMobile" onclick="setPaymentMethod('mobile_money')">📱 Mobile Money</button>
     </div>
 
-    <!-- Mobile Money Info (shown only when Mobile Money selected) -->
-    <div id="mobileMoneyPanel" style="display:none;" class="mobile-money-panel glass-inner">
-      <p class="mm-note">Pay instantly with M-Pesa, Tigo Pesa, or Airtel Money (Tanzania).</p>
-      <div class="form-group">
-        <label for="phoneInput" class="form-label">Mobile Number</label>
-        <input
-          type="tel"
-          id="phoneInput"
-          class="form-input"
-          placeholder="+255 7XX XXX XXX"
-          maxlength="15"
-        />
-        <span class="field-hint">Enter your registered M-Pesa / Tigo / Airtel number.</span>
-      </div>
-    </div>
-
-    <!-- Card Info (shown by default) -->
+    <!-- Card Panel -->
     <div id="cardPanel" class="glass-inner card-panel">
       <p class="mm-note">You'll be securely redirected to Flutterwave to enter your card details.</p>
     </div>
 
-    <!-- ── Email Receipt Notice ────────────────────────────────────────── -->
+    <!-- Mobile Money Panel -->
+    <div id="mobileMoneyPanel" class="glass-inner mobile-money-panel" style="display:none;">
+      <p class="mm-note">Pay with M-Pesa, Tigo Pesa, or Airtel Money (Tanzania).</p>
+      <div class="form-group">
+        <label class="form-label" for="phoneInput">Mobile Number</label>
+        <input type="tel" id="phoneInput" class="form-input" placeholder="+255 7XX XXX XXX" maxlength="15"/>
+        <span class="field-hint">Your registered M-Pesa / Tigo / Airtel number</span>
+      </div>
+    </div>
+
+    <!-- Email notice -->
     <div class="receipt-notice">
       📧 A receipt will be emailed to <strong>{{ current_user.email }}</strong> after payment.
     </div>
 
-    <!-- ── Error Message ───────────────────────────────────────────────── -->
+    <!-- Error -->
     <div id="errorMsg" class="error-banner" style="display:none;"></div>
 
-    <!-- ── Pay Button ──────────────────────────────────────────────────── -->
+    <!-- Pay Button -->
     <button class="pay-btn" id="payBtn" onclick="initiatePayment()">
       <span id="payBtnText">Pay Now</span>
       <span id="payBtnSpinner" style="display:none;">Processing…</span>
@@ -99,21 +156,18 @@
   </div>
 </div>
 
-<!-- ── Styles ────────────────────────────────────────────────────────────── -->
 <style>
   .booking-container {
     min-height: 100vh;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
-    padding: 40px 20px;
-    background: radial-gradient(ellipse at top, rgba(249,115,22,0.08) 0%, transparent 60%);
+    padding: 48px 20px;
+    background: radial-gradient(ellipse at top, rgba(249,115,22,0.07) 0%, transparent 60%);
   }
   .booking-card {
-    width: 100%;
-    max-width: 520px;
-    border-radius: 20px;
-    padding: 36px;
+    width: 100%; max-width: 560px;
+    border-radius: 20px; padding: 36px;
     background: rgba(255,255,255,0.04);
     border: 1px solid rgba(255,255,255,0.1);
     backdrop-filter: blur(16px);
@@ -121,190 +175,226 @@
   .glass-inner {
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 16px;
+    border-radius: 12px; padding: 20px; margin-bottom: 16px;
   }
   .booking-header { margin-bottom: 28px; }
   .back-link { color: #94a3b8; font-size: 13px; text-decoration: none; }
   .back-link:hover { color: #f97316; }
-  .booking-title { font-size: 24px; font-weight: 800; color: #fff; margin: 12px 0 4px; }
+  .booking-title { font-size: 22px; font-weight: 800; color: #fff; margin: 10px 0 4px; }
   .booking-subtitle { font-size: 13px; color: #64748b; }
 
-  .section-label { font-size: 13px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+  .step-label {
+    font-size: 11px; font-weight: 700; color: #f97316;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    margin-bottom: 10px; padding-left: 2px;
+  }
+
+  .details-card { margin-bottom: 20px; }
+  .form-row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .form-group { flex: 1; min-width: 160px; display: flex; flex-direction: column; gap: 6px; }
+  .form-label { font-size: 13px; color: #94a3b8; font-weight: 600; }
+  .form-input {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px; padding: 11px 13px; color: #e2e8f0; font-size: 14px;
+    outline: none; transition: border-color 0.2s;
+    color-scheme: dark;
+  }
+  .form-input:focus { border-color: #f97316; }
+  .form-input.error { border-color: #ef4444; }
+  .field-hint { font-size: 11px; color: #475569; }
+
+  /* Quantity row */
+  .quantity-row { display: flex; align-items: center; gap: 8px; }
+  .qty-btn {
+    width: 36px; height: 36px; border-radius: 8px; font-size: 18px; font-weight: 700;
+    background: rgba(249,115,22,0.12); border: 1px solid rgba(249,115,22,0.3);
+    color: #f97316; cursor: pointer; transition: background 0.15s; flex-shrink: 0;
+  }
+  .qty-btn:hover { background: rgba(249,115,22,0.22); }
+  .qty-input { text-align: center; flex: 1; cursor: default; }
+
+  /* Summary */
   .summary-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 14px; border-bottom: 1px solid rgba(255,255,255,0.05); }
   .summary-row:last-of-type { border-bottom: none; }
   .summary-label { color: #94a3b8; }
   .summary-value { color: #e2e8f0; font-weight: 500; text-align: right; }
+  .placeholder-hint { color: #475569; font-style: italic; font-size: 12px; }
   .summary-divider { height: 1px; background: rgba(255,255,255,0.07); margin: 12px 0; }
   .summary-total-row { display: flex; justify-content: space-between; align-items: center; }
   .total-label { font-size: 14px; font-weight: 700; color: #f97316; }
+  .total-values { text-align: right; }
   .total-usd, .total-tzs { font-size: 22px; font-weight: 800; color: #ffffff; }
 
+  /* Currency toggle */
   .currency-toggle-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 14px; flex-wrap: wrap;
   }
   .currency-label { font-size: 13px; color: #64748b; }
   .toggle-group { display: flex; gap: 4px; }
   .toggle-btn {
-    padding: 6px 16px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    border: 1px solid rgba(255,255,255,0.1);
-    background: transparent;
-    color: #94a3b8;
-    cursor: pointer;
-    transition: all 0.2s;
+    padding: 6px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
+    border: 1px solid rgba(255,255,255,0.1); background: transparent;
+    color: #94a3b8; cursor: pointer; transition: all 0.2s;
   }
-  .toggle-btn.active {
-    background: #f97316;
-    color: #fff;
-    border-color: #f97316;
-  }
+  .toggle-btn.active { background: #f97316; color: #fff; border-color: #f97316; }
   .rate-note { font-size: 11px; color: #475569; }
 
-  .payment-tabs { display: flex; gap: 10px; margin-bottom: 16px; }
+  /* Tabs */
+  .payment-tabs { display: flex; gap: 10px; margin-bottom: 12px; }
   .tab-btn {
-    flex: 1;
-    padding: 12px;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 600;
+    flex: 1; padding: 12px; border-radius: 10px; font-size: 14px; font-weight: 600;
     border: 1px solid rgba(255,255,255,0.1);
-    background: rgba(255,255,255,0.03);
-    color: #94a3b8;
-    cursor: pointer;
-    transition: all 0.2s;
+    background: rgba(255,255,255,0.03); color: #94a3b8; cursor: pointer; transition: all 0.2s;
   }
-  .tab-btn.active {
-    border-color: #f97316;
-    color: #f97316;
-    background: rgba(249,115,22,0.08);
-  }
+  .tab-btn.active { border-color: #f97316; color: #f97316; background: rgba(249,115,22,0.08); }
 
-  .mobile-money-panel { margin-bottom: 16px; }
   .mm-note { font-size: 13px; color: #64748b; margin-bottom: 14px; }
-  .form-group { display: flex; flex-direction: column; gap: 6px; }
-  .form-label { font-size: 13px; color: #94a3b8; font-weight: 500; }
-  .form-input {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 8px;
-    padding: 12px 14px;
-    color: #e2e8f0;
-    font-size: 14px;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  .form-input:focus { border-color: #f97316; }
-  .field-hint { font-size: 11px; color: #475569; }
+  .card-panel .mm-note { margin-bottom: 0; }
 
   .receipt-notice {
-    background: rgba(16,185,129,0.07);
-    border: 1px solid rgba(16,185,129,0.15);
-    border-radius: 8px;
-    padding: 12px 14px;
-    font-size: 13px;
-    color: #6ee7b7;
-    margin-bottom: 20px;
+    background: rgba(16,185,129,0.07); border: 1px solid rgba(16,185,129,0.15);
+    border-radius: 8px; padding: 12px 14px; font-size: 13px;
+    color: #6ee7b7; margin-bottom: 20px;
   }
-
   .error-banner {
-    background: rgba(239,68,68,0.1);
-    border: 1px solid rgba(239,68,68,0.2);
-    border-radius: 8px;
-    padding: 12px 14px;
-    font-size: 13px;
-    color: #fca5a5;
-    margin-bottom: 16px;
+    background: rgba(239,68,68,0.10); border: 1px solid rgba(239,68,68,0.2);
+    border-radius: 8px; padding: 12px 14px; font-size: 13px;
+    color: #fca5a5; margin-bottom: 16px;
   }
-
   .pay-btn {
-    width: 100%;
-    padding: 16px;
-    border-radius: 12px;
-    font-size: 16px;
-    font-weight: 700;
-    color: #fff;
-    background: linear-gradient(135deg, #f97316, #ea580c);
-    border: none;
-    cursor: pointer;
-    transition: opacity 0.2s, transform 0.1s;
-    margin-bottom: 14px;
+    width: 100%; padding: 16px; border-radius: 12px; font-size: 16px; font-weight: 700;
+    color: #fff; background: linear-gradient(135deg, #f97316, #ea580c);
+    border: none; cursor: pointer; transition: opacity 0.2s, transform 0.1s; margin-bottom: 14px;
   }
   .pay-btn:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
-  .pay-btn:active { transform: translateY(0); }
   .pay-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .security-note { font-size: 12px; color: #475569; text-align: center; }
 
   @media (max-width: 480px) {
-    .booking-card { padding: 24px 18px; }
-    .booking-title { font-size: 20px; }
+    .booking-card { padding: 22px 16px; }
+    .booking-title { font-size: 19px; }
+    .form-row { flex-direction: column; }
     .total-usd, .total-tzs { font-size: 18px; }
   }
 </style>
 
-<!-- ── JavaScript ───────────────────────────────────────────────────────── -->
 <script>
+  // ── State ────────────────────────────────────────────────────────────────
+  const bookingId    = {{ booking.id }};
+  const unitPrice    = {{ booking.amount_usd }};   // price per night/day/person
+  const itemType     = "{{ booking.item_type }}";
+
   let selectedCurrency      = "USD";
   let selectedPaymentMethod = "card";
   let liveRate              = null;
-  const bookingId           = {{ booking.id }};
-  const amountUSD           = {{ booking.amount_usd }};
 
-  document.addEventListener("DOMContentLoaded", async () => {
-    try {
-      const res  = await fetch("/api/fx/tzs-rate");
-      const data = await res.json();
-      if (data.status === "success") {
-        liveRate = data.rate;
-        const tzsValue = Math.round(amountUSD * liveRate).toLocaleString();
-        document.getElementById("tzsValue").textContent = tzsValue;
-        document.getElementById("rateNote").textContent = `1 USD ≈ ${liveRate.toLocaleString()} TZS`;
-      }
-    } catch (e) {
-      console.warn("Could not fetch TZS rate:", e);
+  // ── Set today as min date ────────────────────────────────────────────────
+  document.addEventListener("DOMContentLoaded", () => {
+    const today = new Date();
+    const yyyy  = today.getFullYear();
+    const mm    = String(today.getMonth() + 1).padStart(2, '0');
+    const dd    = String(today.getDate() + 1).padStart(2, '0'); // tomorrow min
+    document.getElementById("scheduledDate").setAttribute("min", `${yyyy}-${mm}-${dd}`);
+
+    // Fetch TZS rate
+    fetch("/api/fx/tzs-rate")
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === "success") {
+          liveRate = d.rate;
+          document.getElementById("rateNote").textContent = `1 USD ≈ ${liveRate.toLocaleString()} TZS`;
+          updateTotals();
+        }
+      }).catch(() => {});
+  });
+
+  // ── Date change ──────────────────────────────────────────────────────────
+  document.getElementById("scheduledDate").addEventListener("change", () => {
+    const val  = document.getElementById("scheduledDate").value;
+    const summ = document.getElementById("summaryDate");
+    if (val) {
+      const d = new Date(val + "T12:00:00Z");
+      summ.innerHTML = `<span style="color:#e2e8f0;font-weight:600;">${d.toLocaleDateString("en-US",{weekday:"short",year:"numeric",month:"short",day:"numeric"})}</span>`;
+      document.getElementById("scheduledDate").classList.remove("error");
+    } else {
+      summ.innerHTML = `<span class="placeholder-hint">Select a date above ↑</span>`;
     }
   });
 
+  // ── Quantity ─────────────────────────────────────────────────────────────
+  function changeQty(delta) {
+    const input = document.getElementById("numGuests");
+    const current = parseInt(input.value) || 1;
+    const next = Math.min(Math.max(current + delta, 1), 30);
+    input.value = next;
+    document.getElementById("summaryQty").textContent = next;
+    updateTotals();
+  }
+
+  document.getElementById("numGuests").addEventListener("change", () => {
+    const val = Math.min(Math.max(parseInt(document.getElementById("numGuests").value) || 1, 1), 30);
+    document.getElementById("numGuests").value = val;
+    document.getElementById("summaryQty").textContent = val;
+    updateTotals();
+  });
+
+  // ── Totals ────────────────────────────────────────────────────────────────
+  function updateTotals() {
+    const qty   = parseInt(document.getElementById("numGuests").value) || 1;
+    const total = unitPrice * qty;
+    document.getElementById("usdValue").textContent = total.toFixed(2);
+    if (liveRate) {
+      document.getElementById("tzsValue").textContent = Math.round(total * liveRate).toLocaleString();
+    }
+  }
+
+  // ── Currency ─────────────────────────────────────────────────────────────
   function setCurrency(c) {
     selectedCurrency = c;
     document.getElementById("btnUSD").classList.toggle("active", c === "USD");
     document.getElementById("btnTZS").classList.toggle("active", c === "TZS");
-    document.getElementById("usdDisplay").style.display = c === "USD" ? "inline" : "none";
-    document.getElementById("tzsDisplay").style.display = c === "TZS" ? "inline" : "none";
-    if (c === "TZS" && liveRate) {
-      document.getElementById("tzsValue").textContent = Math.round(amountUSD * liveRate).toLocaleString();
-    } else if (c === "TZS") {
-      document.getElementById("tzsValue").textContent = "(rate loading…)";
+    document.getElementById("usdDisplay").style.display = c === "USD" ? "block" : "none";
+    document.getElementById("tzsDisplay").style.display = c === "TZS" ? "block" : "none";
+    if (c === "TZS" && !liveRate) {
+      document.getElementById("tzsValue").textContent = "(fetching rate…)";
     }
   }
 
+  // ── Payment Method ────────────────────────────────────────────────────────
   function setPaymentMethod(method) {
     selectedPaymentMethod = method;
     document.getElementById("tabCard").classList.toggle("active",   method === "card");
     document.getElementById("tabMobile").classList.toggle("active", method === "mobile_money");
-    document.getElementById("mobileMoneyPanel").style.display = method === "mobile_money" ? "block" : "none";
     document.getElementById("cardPanel").style.display         = method === "card"         ? "block" : "none";
+    document.getElementById("mobileMoneyPanel").style.display = method === "mobile_money" ? "block" : "none";
   }
 
+  // ── Errors ────────────────────────────────────────────────────────────────
   function showError(msg) {
     const el = document.getElementById("errorMsg");
     el.textContent = msg;
     el.style.display = "block";
-    window.scrollTo({ top: el.offsetTop - 20, behavior: "smooth" });
+    el.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
   function clearError() {
     document.getElementById("errorMsg").style.display = "none";
   }
 
+  // ── Pay ───────────────────────────────────────────────────────────────────
   async function initiatePayment() {
     clearError();
+
+    // Validate date
+    const dateVal = document.getElementById("scheduledDate").value;
+    if (!dateVal) {
+      document.getElementById("scheduledDate").classList.add("error");
+      showError("⚠️ Please select your travel date before proceeding.");
+      document.getElementById("scheduledDate").focus();
+      return;
+    }
+
+    // Validate phone
     if (selectedPaymentMethod === "mobile_money") {
       const phone = document.getElementById("phoneInput").value.trim();
       if (!phone || phone.length < 10) {
@@ -312,15 +402,19 @@
         return;
       }
     }
+
     const btn = document.getElementById("payBtn");
     btn.disabled = true;
     document.getElementById("payBtnText").style.display    = "none";
     document.getElementById("payBtnSpinner").style.display = "inline";
 
+    const qty = parseInt(document.getElementById("numGuests").value) || 1;
     const payload = {
       booking_id:     bookingId,
       payment_method: selectedPaymentMethod,
       currency:       selectedCurrency,
+      scheduled_date: dateVal,
+      num_guests:     qty,
     };
     if (selectedPaymentMethod === "mobile_money") {
       payload.phone_number = document.getElementById("phoneInput").value.trim();
