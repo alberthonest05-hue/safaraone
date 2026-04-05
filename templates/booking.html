@@ -454,10 +454,10 @@
     document.getElementById("payBtnSpinner").style.display = "inline";
 
     try {
-      const token = localStorage.getItem("access_token") || "";
       const res   = await fetch("/api/create-checkout-session", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(payload),
       });
       const data = await res.json();
