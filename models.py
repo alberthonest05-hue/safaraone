@@ -178,15 +178,44 @@ class Guide(db.Model):
 class Booking(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    item_type = db.Column(db.String(50), nullable=False) # 'accommodation', 'experience', 'guide'
+    item_type = db.Column(db.String(50), nullable=False)  # 'accommodation', 'experience', 'guide'
     item_id = db.Column(db.String(50), nullable=False)
+    item_name = db.Column(db.String(200), nullable=True)  # Human-readable name — stored at booking time
     amount_usd = db.Column(db.Float, nullable=False)
     num_guests = db.Column(db.Integer, default=1)
     escrow_released = db.Column(db.Boolean, default=False)
-    status = db.Column(db.String(50), default="pending") # "pending", "confirmed", "completed", "cancelled"
+    status = db.Column(db.String(50), default="pending")  # pending / confirmed / completed / cancelled
     booking_date = db.Column(db.DateTime, default=datetime.utcnow)
-    scheduled_date = db.Column(db.DateTime)
-    stripe_session_id = db.Column(db.String(255))
+    scheduled_date = db.Column(db.DateTime, nullable=True)
+    stripe_session_id = db.Column(db.String(255), nullable=True)  # Legacy — kept for old records
+
+    # ── Phase 7 additions ────────────────────────────────────────────────────
+    # Flutterwave unique tx reference (format: saf-{id}-{random})
+    tx_ref = db.Column(db.String(100), nullable=True)
+    # Flutterwave transaction ID — required to call the refund API
+    tx_id = db.Column(db.String(100), nullable=True)
+    # Currency at time of payment: "USD" or "TZS"
+    currency = db.Column(db.String(10), nullable=True, default='USD')
+    # Amount in TZS at time of booking (NULL if paid in USD)
+    tzs_amount = db.Column(db.Float, nullable=True)
+    # Payment method: "card" or "mobile_money"
+    payment_method = db.Column(db.String(30), nullable=True, default='card')
+    # Refund lifecycle: None → "requested" → "processing" → "processed" | "rejected"
+    refund_status = db.Column(db.String(20), nullable=True)
+    # Flutterwave refund ID returned by POST /v3/transactions/<tx_id>/refund
+    flw_refund_id = db.Column(db.String(100), nullable=True)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # Property aliases for Phase 7 route/template compatibility
+    @property
+    def amount(self):
+        """Alias for amount_usd — used by Phase 7 routes and templates."""
+        return self.amount_usd
+
+    @property
+    def tourist_id(self):
+        """Alias for user_id — used by Phase 7 routes."""
+        return self.user_id
 
     def to_dict(self):
         return {
@@ -194,11 +223,18 @@ class Booking(db.Model):
             "user_id": self.user_id,
             "item_type": self.item_type,
             "item_id": self.item_id,
+            "item_name": self.item_name,
             "amount_usd": self.amount_usd,
+            "currency": self.currency or 'USD',
+            "tzs_amount": self.tzs_amount,
+            "payment_method": self.payment_method or 'card',
+            "tx_ref": self.tx_ref,
+            "tx_id": self.tx_id,
+            "refund_status": self.refund_status,
             "status": self.status,
+            "num_guests": self.num_guests,
             "booking_date": self.booking_date.isoformat() if self.booking_date else None,
             "scheduled_date": self.scheduled_date.isoformat() if self.scheduled_date else None,
-            "stripe_session_id": self.stripe_session_id
         }
 
 

@@ -8,6 +8,10 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, m
 from dotenv import load_dotenv
 import os
 import uuid
+import time
+import random
+import string
+from datetime import datetime, timedelta, timezone
 
 # Phase 2: Load environment variables FIRST before importing models/services
 load_dotenv()
@@ -24,6 +28,22 @@ import requests
 # Phase 2B: Use DB-constrained OpenAI Planner from services
 from services.planner import generate_itinerary
 
+# Phase 7: Email service (SendGrid → Brevo → console stub)
+try:
+    from services.email_service import send_booking_receipt, send_cancellation_email
+except Exception as _email_import_err:
+    import logging
+    logging.warning(f'[EMAIL] Could not import email_service: {_email_import_err}')
+    def send_booking_receipt(*a, **kw): return False
+    def send_cancellation_email(*a, **kw): return False
+
+# Phase 7: In-memory FX rate cache (1-hour TTL)
+_tzs_rate_cache = {
+    'rate': None,
+    'fetched_at': 0,
+    'ttl_seconds': 3600,
+}
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "safaraone-secret-key-2025")
 CORS(app, supports_credentials=True)
@@ -34,13 +54,19 @@ if db_url.startswith('postgres://'):
     db_url = db_url.replace('postgres://', 'postgresql://', 1)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'connect_args': {
-        'sslmode': 'require'
-    },
-    'pool_pre_ping': True,
-    'pool_recycle': 300,
-}
+
+# Engine options — only apply SSL for PostgreSQL (not SQLite which doesn't support it)
+if db_url.startswith('postgresql'):
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'connect_args': {'sslmode': 'require'},
+        'pool_pre_ping': True,
+        'pool_recycle': 300,
+    }
+else:
+    # SQLite (local dev) — no SSL, simpler pooling
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,
+    }
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # JWT Configuration
@@ -317,9 +343,12 @@ def guides():
 @app.route('/book/<item_type>/<item_id>')
 @jwt_required(optional=True)
 def book_item(item_type, item_id):
-    # Fully gated — unauthenticated users go to login immediately
     user_id = get_jwt_identity()
     if not user_id:
+        return redirect(url_for('auth'))
+
+    user = db.session.get(User, int(user_id))
+    if not user:
         return redirect(url_for('auth'))
 
     item = None
@@ -334,32 +363,36 @@ def book_item(item_type, item_id):
         return redirect(url_for('index'))
 
     raw = item.to_dict()
-
-    # Normalize price — each model uses a different field name
     if item_type == 'guide':
         display_price = raw.get('price_per_day_usd', 0)
-        display_label = 'per day'
     elif item_type == 'accommodation':
         display_price = raw.get('price_per_night_usd', 0)
-        display_label = 'per night'
-    else:  # experience
+    else:
         display_price = raw.get('price_usd', 0)
-        display_label = 'per person'
 
-    # Normalize name — Experience uses 'title', others use 'name'
-    display_name = raw.get('name') or raw.get('title', 'Item')
+    display_name  = raw.get('name') or raw.get('title', 'Booking')
 
-    # Normalize image — Guide uses avatar_url, others use image_url
-    display_image = raw.get('avatar_url') or raw.get('image_url', '')
+    # Reuse existing pending booking or create a fresh one (Phase 7 flow)
+    booking = Booking.query.filter_by(
+        user_id=int(user_id), item_type=item_type, item_id=str(item_id), status='pending'
+    ).first()
 
-    return render_template('booking.html',
-        item_type=item_type,
-        item_id=item_id,
-        item_name=display_name,
-        item_price=display_price,
-        item_label=display_label,
-        item_image=display_image
-    )
+    if not booking:
+        booking = Booking(
+            user_id=int(user_id),
+            item_type=item_type,
+            item_id=str(item_id),
+            item_name=display_name,
+            amount_usd=float(display_price),
+            status='pending'
+        )
+        db.session.add(booking)
+        db.session.commit()
+    elif not booking.item_name:
+        booking.item_name = display_name
+        db.session.commit()
+
+    return render_template('booking.html', booking=booking, current_user=user)
 
 
 @app.route("/planner")
@@ -471,7 +504,42 @@ def api_get_guide(id):
 #  PHASE 2C: PAYMENTS & REVIEWS
 # ─────────────────────────────────────────────
 
-from datetime import datetime
+# ── Phase 7: Internal FX rate helper (avoids HTTP self-call) ──────────────
+def _get_tzs_rate_internal():
+    """Get TZS/USD rate from cache or Flutterwave FX API."""
+    now = time.time()
+    if (
+        _tzs_rate_cache['rate'] is not None
+        and now - _tzs_rate_cache['fetched_at'] < _tzs_rate_cache['ttl_seconds']
+    ):
+        return {'rate': _tzs_rate_cache['rate'], 'source': 'flutterwave', 'cached': True}
+
+    flw_secret = os.environ.get('FLW_SECRET_KEY', '')
+    rate = None
+    source = 'fallback'
+    try:
+        resp = requests.get(
+            'https://api.flutterwave.com/v3/rates',
+            params={'from': 'USD', 'to': 'TZS', 'amount': '1'},
+            headers={'Authorization': f'Bearer {flw_secret}'},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            rate = float(data['data']['destination']['amount'])
+            source = 'flutterwave'
+    except Exception as e:
+        app.logger.warning(f'[FX] Flutterwave FX fetch failed: {e}')
+
+    if rate is None:
+        rate = 2650.0
+        source = 'fallback'
+        app.logger.warning('[FX] Using fallback TZS rate: 2650.0')
+
+    _tzs_rate_cache['rate'] = rate
+    _tzs_rate_cache['fetched_at'] = now
+    return {'rate': rate, 'source': source, 'cached': False}
+
 
 @app.route("/api/bookings", methods=["POST"])
 @jwt_required()
@@ -1084,295 +1152,337 @@ def my_trips():
         enriched.append({
             'id':             b.id,
             'item_type':      b.item_type,
-            'item_name':      item_name,
+            'item_name':      b.item_name or item_name,
             'item_image':     item_image,
             'amount_usd':     b.amount_usd,
+            'amount':         b.amount_usd,           # alias for Phase 7 template
+            'currency':       b.currency or 'USD',
+            'tzs_amount':     b.tzs_amount,
+            'payment_method': b.payment_method or 'card',
+            'refund_status':  b.refund_status,
+            'tx_ref':         b.tx_ref or f'#{b.id}',
             'num_guests':     b.num_guests,
             'status':         b.status,
-            'scheduled_date': b.scheduled_date.strftime('%b %d, %Y') if b.scheduled_date else 'TBD',
+            'scheduled_date': b.scheduled_date.strftime('%Y-%m-%d') if b.scheduled_date else None,
             'booking_date':   b.booking_date.strftime('%b %d, %Y') if b.booking_date else ''
         })
 
-    return render_template('my_trips.html', bookings=enriched, username=user.username)
+    return render_template('my_trips.html', bookings=enriched, current_user=user, username=user.username)
 
 
+# ── Phase 7, Feature #36 — Upgraded Cancellation Flow ────────────────────
 @app.route('/api/bookings/<int:booking_id>/cancel', methods=['POST'])
 @jwt_required()
 def cancel_booking(booking_id):
-    user_id = int(get_jwt_identity())
-    booking = db.session.get(Booking, booking_id)
+    """
+    Cancels a booking with automated refund logic.
+    >48hrs before trip  → auto-refund via Flutterwave
+    ≤48hrs before trip  → flagged for admin review
+    Sends cancellation email in both cases.
+    """
+    current_user_id = int(get_jwt_identity())
+    booking = Booking.query.filter_by(id=booking_id, user_id=current_user_id).first()
 
     if not booking:
-        return jsonify({"error": "Booking not found"}), 404
-    if booking.user_id != user_id:
-        return jsonify({"error": "Unauthorized"}), 403
-    if booking.status in ['cancelled', 'completed']:
-        return jsonify({"error": "Cannot cancel this booking"}), 400
+        return jsonify({'status': 'error', 'message': 'Booking not found'}), 404
+    if booking.status == 'cancelled':
+        return jsonify({'status': 'error', 'message': 'Booking is already cancelled'}), 400
+    if booking.status == 'pending':
+        booking.status = 'cancelled'
+        db.session.commit()
+        return jsonify({'status': 'success', 'message': 'Booking cancelled (no charge).', 'refund': None})
+
+    # Determine refund eligibility
+    now_utc = datetime.now(timezone.utc)
+    refund_eligible = False
+    hours_until_trip = None
+    if booking.scheduled_date:
+        trip_dt = booking.scheduled_date.replace(tzinfo=timezone.utc) if booking.scheduled_date.tzinfo is None else booking.scheduled_date
+        hours_until_trip = (trip_dt - now_utc).total_seconds() / 3600
+        refund_eligible = hours_until_trip > 48
+
+    refund_info = {
+        'refund_eligible':  refund_eligible,
+        'hours_until_trip': hours_until_trip,
+        'refund_status':    None,
+        'refund_id':        None,
+        'refund_amount':    None,
+        'refund_currency':  booking.currency or 'USD',
+    }
+
+    if refund_eligible and booking.tx_id:
+        flw_secret = os.environ.get('FLW_SECRET_KEY', '')
+        try:
+            refund_amount = booking.tzs_amount if booking.currency == 'TZS' else booking.amount_usd
+            resp = requests.post(
+                f'https://api.flutterwave.com/v3/transactions/{booking.tx_id}/refund',
+                json={'amount': refund_amount},
+                headers={'Authorization': f'Bearer {flw_secret}'},
+                timeout=10,
+            )
+            result = resp.json()
+            if result.get('status') == 'success':
+                refund_data = result.get('data', {})
+                booking.refund_status = 'processed'
+                booking.flw_refund_id = str(refund_data.get('id', ''))
+                refund_info.update({'refund_status': 'processed', 'refund_id': booking.flw_refund_id, 'refund_amount': str(refund_amount)})
+                app.logger.info(f'[REFUND] Processed for booking #{booking_id}')
+            else:
+                booking.refund_status = 'requested'
+                refund_info['refund_status'] = 'requested'
+                app.logger.warning(f'[REFUND] FLW error for #{booking_id}: {result}')
+        except Exception as e:
+            booking.refund_status = 'requested'
+            refund_info['refund_status'] = 'requested'
+            app.logger.error(f'[REFUND] Exception for #{booking_id}: {e}')
+    else:
+        booking.refund_status = 'requested'
+        refund_info['refund_status'] = 'requested'
 
     booking.status = 'cancelled'
     db.session.commit()
-    return jsonify({"message": "Booking cancelled"}), 200
+
+    # Send cancellation email (best-effort)
+    tourist = db.session.get(User, current_user_id)
+    if tourist:
+        try:
+            send_cancellation_email(
+                user_email=tourist.email,
+                username=tourist.username,
+                booking_info={
+                    'booking_id':    booking.id,
+                    'item_name':     booking.item_name or 'Your booking',
+                    'item_type':     booking.item_type.capitalize() if booking.item_type else 'Booking',
+                    'scheduled_date': str(booking.scheduled_date) if booking.scheduled_date else '—',
+                },
+                refund_info=refund_info,
+            )
+        except Exception as e:
+            app.logger.error(f'[EMAIL] Cancellation email failed for #{booking_id}: {e}')
+
+    return jsonify({'status': 'success', 'message': 'Booking cancelled successfully.', 'refund': refund_info})
 
 
+
+# ── Phase 7, Features #43 + #44 — Mobile Money + TZS Checkout ────────────
 @app.route('/api/create-checkout-session', methods=['POST'])
 @jwt_required()
 def create_checkout_session():
-    VALID_ITEM_TYPES = {"accommodation", "experience", "guide"}
+    current_user_id = int(get_jwt_identity())
     data = request.get_json()
-    user_id = int(get_jwt_identity())
 
-    item_type          = data.get("item_type")
-    item_id            = data.get("item_id")
-    num_guests         = int(data.get("num_guests", 1))
-    total_price        = data.get("total_price")
-    scheduled_date_str = data.get("scheduled_date")
-    item_name          = data.get("item_name", "SafaraOne Booking")
+    booking_id     = data.get('booking_id')
+    payment_method = data.get('payment_method', 'card')
+    currency       = data.get('currency', 'USD').upper()
+    phone_number   = data.get('phone_number', '')
 
-    # Validation
-    if not item_type or item_type not in VALID_ITEM_TYPES:
-        return jsonify({"error": "Invalid or missing item_type"}), 400
-    if not item_id:
-        return jsonify({"error": "Missing item_id"}), 400
-    if total_price is None or float(total_price) <= 0:
-        return jsonify({"error": "Amount must be greater than 0"}), 400
+    if not booking_id:
+        return jsonify({'status': 'error', 'message': 'booking_id is required'}), 400
 
-    scheduled_date = None
-    if scheduled_date_str:
-        try:
-            scheduled_date = datetime.fromisoformat(scheduled_date_str)
-        except ValueError:
-            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+    booking = Booking.query.filter_by(id=booking_id, user_id=current_user_id).first()
+    if not booking:
+        return jsonify({'status': 'error', 'message': 'Booking not found'}), 404
+    if booking.status != 'pending':
+        return jsonify({'status': 'error', 'message': 'Booking is not in pending state'}), 400
+    if payment_method == 'mobile_money' and not phone_number:
+        return jsonify({'status': 'error', 'message': 'phone_number is required for mobile money'}), 400
 
-    # Step 1: Look up the tourist's email for Flutterwave customer object
-    user = db.session.get(User, user_id)
+    user = db.session.get(User, current_user_id)
     if not user:
-        return jsonify({"error": "User not found"}), 404
+        return jsonify({'status': 'error', 'message': 'User not found'}), 404
 
-    # Step 2: Create the booking with status "pending"
-    try:
-        booking = Booking(
-            user_id=user_id,
-            item_type=item_type,
-            item_id=str(item_id),
-            amount_usd=float(total_price),
-            num_guests=num_guests,
-            scheduled_date=scheduled_date,
-            status="pending"
-        )
-        db.session.add(booking)
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": f"Could not create booking: {str(e)}"}), 500
+    # Currency conversion
+    amount_usd = float(booking.amount_usd)
+    amount_for_charge = amount_usd
+    tzs_amount = None
+    if currency == 'TZS':
+        rate_data = _get_tzs_rate_internal()
+        rate = rate_data.get('rate', 2650.0)
+        tzs_amount = round(amount_usd * rate, 2)
+        amount_for_charge = tzs_amount
 
-    # Step 3: Build the unique transaction reference
-    # Format: saf-{booking_id}-{8 random hex chars}
-    # We encode booking_id here so we can extract it from the redirect URL later
-    tx_ref = f"saf-{booking.id}-{uuid.uuid4().hex[:8]}"
+    tx_ref = f"saf-{booking.id}-{''.join(random.choices(string.ascii_lowercase + string.digits, k=8))}"
+    redirect_url = url_for('payment_callback', _external=True)
 
-    # Step 4: Build redirect URL — single URL, Flutterwave adds ?status=... to it
-    base        = os.environ.get('APP_BASE_URL', request.host_url.rstrip('/'))
-    redirect_url = f"{base}/payment/callback"
-
-    # Step 5: Call Flutterwave API to create a hosted checkout link
-    flw_payload = {
-        "tx_ref":       tx_ref,
-        "amount":       float(total_price),
-        "currency":     "USD",
-        "redirect_url": redirect_url,
-        "customer": {
-            "email": user.email,
-            "name":  user.username,
+    payload = {
+        'tx_ref':       tx_ref,
+        'amount':       amount_for_charge,
+        'currency':     currency,
+        'redirect_url': redirect_url,
+        'customer':     {'email': user.email, 'name': user.username},
+        'meta':         {'booking_id': booking.id, 'payment_method': payment_method, 'currency': currency},
+        'customizations': {
+            'title':       'SafaraOne',
+            'description': f"Booking: {booking.item_name or 'Trip'}",
+            'logo':        'https://safaraone.onrender.com/static/img/logo.png',
         },
-        "customizations": {
-            "title":       "SafaraOne",
-            "description": f"{item_name} · {num_guests} guest(s) · {scheduled_date_str or 'TBD'}",
-        },
-        "meta": {
-            "booking_id": str(booking.id),
-            "user_id":    str(user_id),
-        }
     }
+    if payment_method == 'mobile_money':
+        payload['payment_options'] = 'mobilemoneytanzania'
+        payload['customer']['phonenumber'] = phone_number
+    else:
+        payload['payment_options'] = 'card'
 
-    flw_headers = {
-        "Authorization": f"Bearer {os.environ.get('FLW_SECRET_KEY')}",
-        "Content-Type":  "application/json"
-    }
-
+    flw_secret = os.environ.get('FLW_SECRET_KEY', '')
     try:
-        flw_response = requests.post(
-            "https://api.flutterwave.com/v3/payments",
-            json=flw_payload,
-            headers=flw_headers,
-            timeout=15
+        resp = requests.post(
+            'https://api.flutterwave.com/v3/payments',
+            json=payload,
+            headers={'Authorization': f'Bearer {flw_secret}'},
+            timeout=10,
         )
-        flw_data = flw_response.json()
-
-        if flw_data.get("status") == "success":
-            session_url = flw_data["data"]["link"]
-            return jsonify({"session_url": session_url, "booking_id": booking.id}), 200
+        result = resp.json()
+        if result.get('status') == 'success':
+            booking.tx_ref         = tx_ref
+            booking.currency       = currency
+            booking.tzs_amount     = tzs_amount
+            booking.payment_method = payment_method
+            db.session.commit()
+            return jsonify({'status': 'success', 'session_url': result['data']['link'], 'tx_ref': tx_ref})
         else:
-            # Flutterwave rejected the request — roll back the pending booking
             db.session.delete(booking)
             db.session.commit()
-            error_msg = flw_data.get("message", "Flutterwave error. Check your API key.")
-            return jsonify({"error": error_msg}), 500
-
+            return jsonify({'status': 'error', 'message': result.get('message', 'Payment gateway error. Please try again.')}), 502
     except requests.exceptions.Timeout:
         db.session.delete(booking)
         db.session.commit()
-        return jsonify({"error": "Payment gateway timed out. Please try again."}), 504
-
+        return jsonify({'status': 'error', 'message': 'Payment gateway timed out. Please try again.'}), 504
     except Exception as e:
         db.session.delete(booking)
         db.session.commit()
-        return jsonify({"error": f"Payment error: {str(e)}"}), 500
+        app.logger.error(f'[CHECKOUT] Unexpected error: {e}')
+        return jsonify({'status': 'error', 'message': 'An unexpected error occurred.'}), 500
 
 
+
+# ── Phase 7 — FX Rate Endpoint ────────────────────────────────────────────
+@app.route('/api/fx/tzs-rate', methods=['GET'])
+def get_tzs_rate():
+    """Returns live TZS/USD rate, cached 1 hour."""
+    data = _get_tzs_rate_internal()
+    return jsonify({'status': 'success', **data})
+
+
+# ── Phase 7 — Updated Flutterwave Webhook (saves tx_id) ─────────────────
 @app.route('/api/flw/webhook', methods=['POST'])
 def flw_webhook():
-    # Flutterwave verification: compare verif-hash header to our secret
-    # The secret is a string WE chose and set in both .env and Flutterwave dashboard
     flw_hash      = request.headers.get('verif-hash')
-    expected_hash = os.environ.get('FLW_WEBHOOK_SECRET')
-
+    expected_hash = os.environ.get('FLW_VERIF_HASH', os.environ.get('FLW_WEBHOOK_SECRET', ''))
     if not flw_hash or flw_hash != expected_hash:
-        return jsonify({"error": "Unauthorized"}), 401
+        return jsonify({'error': 'Unauthorized'}), 401
 
     data = request.get_json()
-
     if not data:
-        return jsonify({"error": "No payload"}), 400
+        return jsonify({'error': 'No payload'}), 400
 
-    # Only process completed charge events
     if data.get('event') == 'charge.completed':
-        payment_data = data.get('data', {})
+        payload = data.get('data', {})
+        if payload.get('status') == 'successful':
+            tx_ref   = payload.get('tx_ref', '')
+            trans_id = payload.get('id')
+            booking  = Booking.query.filter_by(tx_ref=tx_ref).first()
+            if booking and booking.status == 'pending':
+                booking.status = 'confirmed'
+                booking.tx_id  = str(trans_id)  # Phase 7: store for refund calls
+                db.session.commit()
+                app.logger.info(f'[WEBHOOK] Booking #{booking.id} confirmed (tx_id={trans_id})')
 
-        if payment_data.get('status') == 'successful':
-            tx_ref = payment_data.get('tx_ref', '')
-            meta   = payment_data.get('meta', {})
-
-            # Try to get booking_id from meta first (most reliable)
-            booking_id = meta.get('booking_id')
-
-            # Fallback: parse booking_id from tx_ref (format: saf-{id}-{random})
-            if not booking_id:
-                parts = tx_ref.split('-')
-                if len(parts) >= 2:
-                    try:
-                        booking_id = parts[1]
-                    except (IndexError, ValueError):
-                        pass
-
-            if booking_id:
-                booking = db.session.get(Booking, int(booking_id))
-                # Guard: only confirm if still pending (webhook may fire after callback)
-                if booking and booking.status == 'pending':
-                    booking.status = 'confirmed'
-                    db.session.commit()
-
-    # Always return 200 — Flutterwave retries if it gets anything else
-    return jsonify({"status": "ok"}), 200
+    return jsonify({'status': 'ok'}), 200
 
 
+# ── Phase 7, Feature #46 — Payment Callback (sends receipt email) ────────
 @app.route('/payment/callback')
 def payment_callback():
-    status         = request.args.get('status', '')
-    tx_ref         = request.args.get('tx_ref', '')
-    transaction_id = request.args.get('transaction_id', '')
+    status   = request.args.get('status', '')
+    tx_ref   = request.args.get('tx_ref', '')
+    trans_id = request.args.get('transaction_id', '')
 
-    # Extract booking_id from tx_ref
-    # tx_ref format: "saf-{booking_id}-{random}"
-    # Example:       "saf-7-a3f9b2c1"
-    booking_id = None
-    parts = tx_ref.split('-')
-    if len(parts) >= 2:
+    if status != 'successful' or not trans_id:
+        # Mark pending booking as cancelled so the slot is freed
+        booking = Booking.query.filter_by(tx_ref=tx_ref).first()
+        if booking and booking.status == 'pending':
+            booking.status = 'cancelled'
+            db.session.commit()
+        return redirect(url_for('payment_cancel_page'))
+
+    booking = Booking.query.filter_by(tx_ref=tx_ref).first()
+    if not booking:
+        app.logger.error(f'[CALLBACK] No booking for tx_ref: {tx_ref}')
+        return redirect(url_for('payment_cancel_page'))
+
+    # Server-side verification
+    flw_secret = os.environ.get('FLW_SECRET_KEY', '')
+    try:
+        resp = requests.get(
+            f'https://api.flutterwave.com/v3/transactions/{trans_id}/verify',
+            headers={'Authorization': f'Bearer {flw_secret}'},
+            timeout=10,
+        )
+        result = resp.json()
+        if result.get('status') != 'success':
+            app.logger.warning(f'[CALLBACK] Verification failed for {tx_ref}')
+            return redirect(url_for('payment_cancel_page'))
+
+        verified = result['data']
+        expected = booking.tzs_amount if booking.currency == 'TZS' else booking.amount_usd
+        if abs(float(verified.get('amount', 0)) - expected) > 1:
+            app.logger.warning(f'[CALLBACK] Amount mismatch for {tx_ref}')
+            return redirect(url_for('payment_cancel_page'))
+    except Exception as e:
+        app.logger.error(f'[CALLBACK] Verify exception for {tx_ref}: {e}')
+        return redirect(url_for('payment_cancel_page'))
+
+    # Confirm booking
+    booking.status = 'confirmed'
+    booking.tx_id  = str(trans_id)
+    db.session.commit()
+
+    # Send receipt email (best-effort)
+    tourist = db.session.get(User, booking.user_id)
+    if tourist:
+        guide_name = guide_phone = None
+        if booking.item_type == 'guide':
+            g = db.session.get(Guide, booking.item_id)
+            if g:
+                guide_name  = g.name
+                guide_phone = getattr(g, 'phone', None)
         try:
-            booking_id = int(parts[1])
-        except (ValueError, IndexError):
-            pass
+            send_booking_receipt(
+                user_email=tourist.email,
+                username=tourist.username,
+                booking_info={
+                    'booking_id':     booking.id,
+                    'item_name':      booking.item_name or 'Your Booking',
+                    'item_type':      booking.item_type.capitalize() if booking.item_type else 'Booking',
+                    'scheduled_date': booking.scheduled_date.strftime('%b %d, %Y') if booking.scheduled_date else '—',
+                    'amount_usd':     f'{booking.amount_usd:.2f}',
+                    'amount_tzs':     f'{booking.tzs_amount:,.0f}' if booking.tzs_amount else None,
+                    'currency':       booking.currency or 'USD',
+                    'payment_method': booking.payment_method or 'card',
+                    'tx_ref':         booking.tx_ref,
+                    'guide_name':     guide_name,
+                    'guide_phone':    guide_phone,
+                },
+            )
+        except Exception as e:
+            app.logger.error(f'[EMAIL] Receipt failed for #{booking.id}: {e}')
 
-    # ── CANCELLED OR ABANDONED ──────────────────────────────────────────────
-    # Flutterwave sets status="cancelled" when tourist clicks back/cancel
-    # If transaction_id is missing, the payment never completed
-    if status == 'cancelled' or not transaction_id:
-        if booking_id:
-            booking = db.session.get(Booking, booking_id)
-            if booking and booking.status == 'pending':
-                booking.status = 'cancelled'
-                db.session.commit()
-        return render_template('payment_cancel.html')
+    return redirect(url_for('payment_success_page', booking_id=booking.id))
 
-    # ── SUCCESSFUL PAYMENT ──────────────────────────────────────────────────
-    # IMPORTANT: Never trust the ?status=successful query param alone.
-    # Always verify the transaction_id with the Flutterwave API.
-    # This prevents anyone from manually visiting the success URL to fake a payment.
 
-    if status == 'successful' and transaction_id:
-        try:
-            verify_url = f"https://api.flutterwave.com/v3/transactions/{transaction_id}/verify"
-            flw_headers = {
-                "Authorization": f"Bearer {os.environ.get('FLW_SECRET_KEY')}",
-                "Content-Type":  "application/json"
-            }
-            verify_resp = requests.get(verify_url, headers=flw_headers, timeout=10)
-            verify_data = verify_resp.json()
+# ── Phase 7 — Payment Success & Cancel Pages ───────────────────────────
+@app.route('/payment/success')
+@jwt_required(optional=True)
+def payment_success_page():
+    booking_id   = request.args.get('booking_id')
+    user_id      = get_jwt_identity()
+    current_user = db.session.get(User, int(user_id)) if user_id else None
+    booking      = db.session.get(Booking, int(booking_id)) if booking_id else None
+    return render_template('payment_success.html', booking=booking, current_user=current_user)
 
-            # Check both outer status and inner payment status
-            if (verify_data.get('status') == 'success' and
-                    verify_data.get('data', {}).get('status') == 'successful'):
 
-                # Get booking_id from verified meta (more reliable than tx_ref parsing)
-                meta_booking_id = verify_data['data'].get('meta', {}).get('booking_id')
-                final_booking_id = meta_booking_id or booking_id
-
-                booking_info = None
-
-                if final_booking_id:
-                    booking = db.session.get(Booking, int(final_booking_id))
-
-                    # Confirm if still pending
-                    # (webhook may have already confirmed it — that is fine)
-                    if booking and booking.status == 'pending':
-                        booking.status = 'confirmed'
-                        db.session.commit()
-
-                    # Build booking summary for the success template
-                    if booking:
-                        item_name = booking.item_id  # safe fallback
-                        if booking.item_type == 'guide':
-                            item = db.session.get(Guide, booking.item_id)
-                            if item:
-                                item_name = item.name
-                        elif booking.item_type == 'accommodation':
-                            item = db.session.get(Accommodation, booking.item_id)
-                            if item:
-                                item_name = item.name
-                        elif booking.item_type == 'experience':
-                            item = db.session.get(Experience, booking.item_id)
-                            if item:
-                                item_name = item.title
-
-                        booking_info = {
-                            'id':             booking.id,
-                            'item_name':      item_name,
-                            'item_type':      booking.item_type,
-                            'amount_usd':     booking.amount_usd,
-                            'num_guests':     booking.num_guests,
-                            'scheduled_date': booking.scheduled_date.strftime('%b %d, %Y') if booking.scheduled_date else 'TBD',
-                            'status':         booking.status,
-                        }
-
-                return render_template('payment_success.html', booking=booking_info)
-
-        except requests.exceptions.Timeout:
-            # Flutterwave API timed out — show cancel page to be safe
-            pass
-        except Exception:
-            pass
-
-    # ── FALLBACK ────────────────────────────────────────────────────────────
-    # Anything unexpected (bad status, verification failed, exception) → cancel page
+@app.route('/payment/cancel')
+def payment_cancel_page():
     return render_template('payment_cancel.html')
 
 

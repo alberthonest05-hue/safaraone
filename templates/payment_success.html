@@ -1,179 +1,171 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Payment Confirmed · SafaraOne</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+{% extends "base.html" %}
 
-    body {
-      min-height: 100vh;
-      background: linear-gradient(135deg, #0a1628 0%, #1a2a4a 50%, #0d3b2e 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      padding: 2rem 1rem;
-    }
+{% block title %}Payment Successful — SafaraOne{% endblock %}
 
-    .card {
-      background: rgba(255,255,255,0.07);
-      backdrop-filter: blur(24px);
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 28px;
-      padding: 3rem 2.5rem;
-      max-width: 460px;
-      width: 100%;
-      text-align: center;
-      box-shadow: 0 32px 64px rgba(0,0,0,0.5);
-      color: #fff;
-    }
+{% block content %}
+<div class="success-container">
+  <div class="success-card glass">
 
-    .check-ring {
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
-      background: rgba(74,222,128,0.15);
-      border: 2px solid rgba(74,222,128,0.4);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 1.5rem;
-      font-size: 2.2rem;
-      animation: popIn 0.5s cubic-bezier(0.34,1.56,0.64,1) both;
-    }
-
-    @keyframes popIn {
-      from { transform: scale(0); opacity: 0; }
-      to   { transform: scale(1); opacity: 1; }
-    }
-
-    h1 {
-      font-size: 1.75rem;
-      font-weight: 700;
-      margin-bottom: 0.5rem;
-      letter-spacing: -0.02em;
-    }
-
-    .subtitle {
-      color: rgba(255,255,255,0.5);
-      font-size: 0.95rem;
-      margin-bottom: 2rem;
-      line-height: 1.5;
-    }
-
-    .booking-summary {
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 16px;
-      padding: 1.25rem 1.5rem;
-      margin-bottom: 2rem;
-      text-align: left;
-    }
-
-    .summary-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0.45rem 0;
-      font-size: 0.9rem;
-      color: rgba(255,255,255,0.7);
-    }
-    .summary-row:not(:last-child) {
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-    }
-    .summary-row .label { color: rgba(255,255,255,0.45); }
-    .summary-row .value { font-weight: 600; color: #fff; }
-    .summary-row .value.green { color: #4ade80; }
-
-    .badge-confirmed {
-      display: inline-block;
-      background: rgba(74,222,128,0.15);
-      color: #4ade80;
-      border: 1px solid rgba(74,222,128,0.3);
-      border-radius: 20px;
-      font-size: 0.72rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      padding: 3px 10px;
-    }
-
-    .actions {
-      display: flex;
-      gap: 0.75rem;
-      flex-direction: column;
-    }
-
-    .btn-primary {
-      display: block;
-      background: linear-gradient(135deg, #4ade80, #16a34a);
-      color: #fff;
-      text-decoration: none;
-      padding: 0.85rem 1.5rem;
-      border-radius: 14px;
-      font-weight: 700;
-      font-size: 0.95rem;
-      transition: opacity 0.2s;
-    }
-    .btn-primary:hover { opacity: 0.88; }
-
-    .btn-secondary {
-      display: block;
-      color: rgba(255,255,255,0.45);
-      text-decoration: none;
-      padding: 0.65rem;
-      font-size: 0.88rem;
-      transition: color 0.2s;
-    }
-    .btn-secondary:hover { color: #fff; }
-  </style>
-</head>
-<body>
-
-<div class="card">
-  <div class="check-ring">✓</div>
-  <h1>You're all set!</h1>
-  <p class="subtitle">
-    Your payment was processed successfully.<br>
-    Your guide will be in touch before the trip.
-  </p>
-
-  {% if booking %}
-  <div class="booking-summary">
-    <div class="summary-row">
-      <span class="label">Booking</span>
-      <span class="value">#{{ booking.id }}</span>
+    <!-- ── Animated Checkmark ─────────────────────────────────────────── -->
+    <div class="success-icon-wrap">
+      <div class="success-ring"></div>
+      <div class="success-icon">✅</div>
     </div>
-    <div class="summary-row">
-      <span class="label">Item</span>
-      <span class="value">{{ booking.item_name }}</span>
-    </div>
-    <div class="summary-row">
-      <span class="label">Date</span>
-      <span class="value">{{ booking.scheduled_date }}</span>
-    </div>
-    <div class="summary-row">
-      <span class="label">Guests</span>
-      <span class="value">{{ booking.num_guests }}</span>
-    </div>
-    <div class="summary-row">
-      <span class="label">Total paid</span>
-      <span class="value green">${{ "%.2f"|format(booking.amount_usd) }}</span>
-    </div>
-    <div class="summary-row">
-      <span class="label">Status</span>
-      <span class="value"><span class="badge-confirmed">{{ booking.status }}</span></span>
-    </div>
-  </div>
-  {% endif %}
 
-  <div class="actions">
-    <a href="/my-trips" class="btn-primary">View My Trips →</a>
-    <a href="/" class="btn-secondary">← Back to Home</a>
+    <!-- ── Heading ────────────────────────────────────────────────────── -->
+    <h1 class="success-title">Payment Successful!</h1>
+    <p class="success-sub">Your booking is confirmed and your spot is secured.</p>
+
+    <!-- ── Email Receipt Notice (Phase 7) ────────────────────────────── -->
+    <div class="receipt-notice">
+      <span class="receipt-icon">📧</span>
+      <div>
+        <strong>Receipt sent</strong><br/>
+        A booking confirmation and receipt has been emailed to
+        {% if current_user %}
+        <span class="email-address">{{ current_user.email }}</span>.
+        {% else %}
+        your registered email address.
+        {% endif %}
+        Check your inbox (and spam folder if needed).
+      </div>
+    </div>
+
+    <!-- ── Booking Summary ───────────────────────────────────────────── -->
+    {% if booking %}
+    <div class="booking-summary glass-inner">
+      <h2 class="summary-heading">Booking Details</h2>
+      <div class="summary-row">
+        <span class="s-label">Reference</span>
+        <span class="s-value">#{{ booking.id }}</span>
+      </div>
+      <div class="summary-row">
+        <span class="s-label">Item</span>
+        <span class="s-value">{{ booking.item_name or '—' }}</span>
+      </div>
+      <div class="summary-row">
+        <span class="s-label">Type</span>
+        <span class="s-value">{{ booking.item_type | capitalize }}</span>
+      </div>
+      {% if booking.scheduled_date %}
+      <div class="summary-row">
+        <span class="s-label">Date</span>
+        <span class="s-value">{{ booking.scheduled_date }}</span>
+      </div>
+      {% endif %}
+      <div class="summary-row">
+        <span class="s-label">Amount Paid</span>
+        <span class="s-value amount-paid">
+          {% if booking.currency == 'TZS' and booking.tzs_amount %}
+            TZS {{ "{:,.0f}".format(booking.tzs_amount) }}
+          {% else %}
+            USD {{ "%.2f" | format(booking.amount_usd) }}
+          {% endif %}
+        </span>
+      </div>
+      <div class="summary-row">
+        <span class="s-label">Payment Method</span>
+        <span class="s-value">
+          {{ 'Mobile Money' if booking.payment_method == 'mobile_money' else 'Card' }}
+        </span>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- ── Actions ────────────────────────────────────────────────────── -->
+    <div class="action-btns">
+      <a href="{{ url_for('my_trips') }}" class="btn-primary">View My Trips</a>
+      <a href="{{ url_for('index') }}"    class="btn-secondary">Back to Home</a>
+    </div>
+
+    <p class="support-note">
+      Questions? Contact us at
+      <a href="mailto:support@safaraone.com">support@safaraone.com</a>
+    </p>
+
   </div>
 </div>
 
-</body>
-</html>
+<style>
+  .success-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    background: radial-gradient(ellipse at center, rgba(16,185,129,0.06) 0%, transparent 70%);
+  }
+  .success-card {
+    width: 100%; max-width: 500px;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 24px; padding: 48px 40px; text-align: center;
+    backdrop-filter: blur(16px);
+  }
+  .glass-inner {
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 12px; padding: 20px; text-align: left;
+  }
+
+  .success-icon-wrap { position: relative; width: 80px; height: 80px; margin: 0 auto 24px; }
+  .success-ring {
+    position: absolute; inset: 0; border-radius: 50%;
+    border: 2px solid rgba(16,185,129,0.3);
+    animation: pulse-ring 2s ease-out infinite;
+  }
+  .success-icon {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 44px; animation: pop-in 0.4s cubic-bezier(0.175,0.885,0.32,1.275) both;
+  }
+  @keyframes pulse-ring { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(1.5); opacity: 0; } }
+  @keyframes pop-in { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  .success-title { font-size: 26px; font-weight: 800; color: #ffffff; margin: 0 0 8px; }
+  .success-sub   { font-size: 14px; color: #64748b; margin: 0 0 28px; }
+
+  .receipt-notice {
+    display: flex; align-items: flex-start; gap: 14px;
+    background: rgba(16,185,129,0.07); border: 1px solid rgba(16,185,129,0.2);
+    border-radius: 12px; padding: 16px; text-align: left; margin-bottom: 24px;
+    font-size: 13px; color: #a7f3d0; line-height: 1.6;
+  }
+  .receipt-icon { font-size: 22px; flex-shrink: 0; }
+  .receipt-notice strong { color: #6ee7b7; display: block; margin-bottom: 2px; }
+  .email-address { color: #6ee7b7; font-weight: 600; }
+
+  .booking-summary { margin-bottom: 28px; }
+  .summary-heading {
+    font-size: 13px; font-weight: 600; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: 0.07em; margin: 0 0 14px;
+  }
+  .summary-row {
+    display: flex; justify-content: space-between; padding: 8px 0;
+    font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .summary-row:last-of-type { border-bottom: none; }
+  .s-label { color: #64748b; }
+  .s-value { color: #e2e8f0; font-weight: 500; }
+  .amount-paid { color: #34d399; font-weight: 700; }
+
+  .action-btns { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+  .btn-primary {
+    display: block; padding: 14px; border-radius: 12px;
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #fff; font-weight: 700; font-size: 15px; text-decoration: none; transition: opacity 0.2s;
+  }
+  .btn-primary:hover { opacity: 0.87; }
+  .btn-secondary {
+    display: block; padding: 13px; border-radius: 12px;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+    color: #94a3b8; font-weight: 600; font-size: 14px; text-decoration: none; transition: background 0.2s;
+  }
+  .btn-secondary:hover { background: rgba(255,255,255,0.08); }
+
+  .support-note { font-size: 12px; color: #475569; }
+  .support-note a { color: #f97316; text-decoration: none; }
+
+  @media (max-width: 480px) {
+    .success-card { padding: 36px 20px; }
+    .success-title { font-size: 22px; }
+  }
+</style>
+{% endblock %}
