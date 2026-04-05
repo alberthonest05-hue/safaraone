@@ -5,9 +5,17 @@ Handles all transactional emails:
   - Booking receipt (after successful payment)
   - Cancellation confirmation (with refund status)
 
-Primary provider : SendGrid
-Fallback provider: Brevo (Sendinblue)
-Stub mode        : If neither key is set, emails are logged to console only.
+Provider chain (first available key wins):
+  1. Resend       — free 3,000/month, no SDK needed, just RESEND_API_KEY
+  2. SendGrid     — SENDGRID_API_KEY
+  3. Brevo        — BREVO_API_KEY
+  4. Console stub — logs to server output when no key is configured
+
+To enable email:
+  Add RESEND_API_KEY to your Render environment variables.
+  Sign up free at resend.com (no credit card required).
+  Also set RESEND_FROM_EMAIL to a verified email or use the
+  onboarding default: onboarding@resend.dev (works immediately).
 
 Usage:
     from services.email_service import send_booking_receipt, send_cancellation_email
@@ -19,15 +27,49 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+RESEND_API_KEY     = os.environ.get("RESEND_API_KEY", "")
 SENDGRID_API_KEY   = os.environ.get("SENDGRID_API_KEY", "")
 BREVO_API_KEY      = os.environ.get("BREVO_API_KEY", "")
-FROM_EMAIL         = os.environ.get("SENDGRID_FROM_EMAIL", "noreply@safaraone.com")
+# Resend free tier allows onboarding@resend.dev as sender until you verify a domain
+FROM_EMAIL         = os.environ.get("RESEND_FROM_EMAIL",
+                     os.environ.get("SENDGRID_FROM_EMAIL", "onboarding@resend.dev"))
 FROM_NAME          = "SafaraOne"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _send_via_resend(to_email: str, to_name: str, subject: str, html_body: str) -> bool:
+    """Send email via Resend API (free tier, no SDK needed). Returns True on success."""
+    import urllib.request
+    import json as _json
+    try:
+        payload = _json.dumps({
+            "from": f"{FROM_NAME} <{FROM_EMAIL}>",
+            "to":   [to_email],
+            "subject": subject,
+            "html": html_body,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status in (200, 201):
+                logger.info(f"[EMAIL] Resend sent '{subject}' to {to_email}")
+                return True
+            logger.warning(f"[EMAIL] Resend non-2xx: {resp.status}")
+            return False
+    except Exception as e:
+        logger.error(f"[EMAIL] Resend error: {e}")
+        return False
+
 
 def _send_via_sendgrid(to_email: str, to_name: str, subject: str, html_body: str) -> bool:
     """Send email via SendGrid. Returns True on success."""
@@ -100,21 +142,31 @@ def _send_stub(to_email: str, subject: str, html_body: str) -> bool:
 
 
 def _dispatch(to_email: str, to_name: str, subject: str, html_body: str) -> bool:
-    """Route to the correct provider, with automatic fallback chain."""
-    # Only use SendGrid if the key looks real (not a placeholder)
+    """Route to the correct provider, with automatic fallback chain.
+    Priority: Resend → SendGrid → Brevo → console stub
+    """
+    # 1. Resend (primary — free, no SDK, just needs RESEND_API_KEY)
+    if RESEND_API_KEY and not RESEND_API_KEY.startswith("re_paste_"):
+        success = _send_via_resend(to_email, to_name, subject, html_body)
+        if success:
+            return True
+        logger.warning("[EMAIL] Resend failed — trying SendGrid fallback")
+
+    # 2. SendGrid
     if SENDGRID_API_KEY and not SENDGRID_API_KEY.startswith("SG.paste_"):
         success = _send_via_sendgrid(to_email, to_name, subject, html_body)
         if success:
             return True
         logger.warning("[EMAIL] SendGrid failed — trying Brevo fallback")
 
-    # Only use Brevo if the key looks real (not a placeholder)
+    # 3. Brevo
     if BREVO_API_KEY and not BREVO_API_KEY.startswith("paste_"):
         success = _send_via_brevo(to_email, to_name, subject, html_body)
         if success:
             return True
         logger.warning("[EMAIL] Brevo failed — falling back to console stub")
 
+    # 4. Console stub
     return _send_stub(to_email, subject, html_body)
 
 
