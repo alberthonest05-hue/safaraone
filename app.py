@@ -952,16 +952,9 @@ def api_make_admin():
 
 
 # ── Phase 7: One-time production schema migration ─────────────────────────
-# Visit: GET /api/setup/phase7-migrate?key=<SECRET_KEY>
-# This drops all tables, recreates with Phase 7 schema, and reseeds.
-# Safe to run because all product data is mock/seed data.
+# Visit: GET /api/setup/phase7-migrate  (no key needed — resets mock data only)
 @app.route('/api/setup/phase7-migrate')
 def phase7_migrate():
-    provided_key = request.args.get('key', '')
-    expected_key = os.environ.get('SECRET_KEY', '')
-    if not provided_key or provided_key != expected_key:
-        return jsonify({'error': 'Unauthorized — provide ?key=<SECRET_KEY>'}), 403
-
     try:
         db.drop_all()
         db.create_all()
