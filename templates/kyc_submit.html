@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Identity Verification — SafaraOne{% endblock %}
+
+{% block content %}
+<section style="min-height:80vh; padding:80px 24px; display:flex; align-items:flex-start; justify-content:center;">
+  <div style="max-width:560px; width:100%;">
+    <h1 style="font-size:2rem; font-weight:800; margin-bottom:8px; color:var(--amber);">🪪 Identity Verification</h1>
+    <p style="color:var(--text-secondary); margin-bottom:32px;">
+      Verified guides appear higher in search results and build tourist trust. Verification typically takes 24–48 hours.
+    </p>
+
+    <!-- Current KYC status badge -->
+    {% if kyc and kyc.status %}
+    <div class="kyc-status-badge kyc-status-{{ kyc.status }}">
+      <p style="margin:0; font-weight:700;">
+        {% if kyc.status == 'approved' %}✅ Your identity is verified
+        {% elif kyc.status == 'pending' %}⏳ Verification pending review
+        {% elif kyc.status == 'rejected' %}❌ Verification was not approved
+        {% elif kyc.status == 'flagged' %}⚠️ Additional review required
+        {% else %}📋 Not yet submitted
+        {% endif %}
+      </p>
+      {% if kyc.admin_notes %}
+      <p style="margin:8px 0 0; font-size:0.85rem; color:var(--text-secondary);">Note: {{ kyc.admin_notes }}</p>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if not kyc or kyc.status in ('not_submitted', 'rejected', 'flagged') %}
+    <!-- Submit form -->
+    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:32px;">
+      <form id="kycForm" enctype="multipart/form-data" onsubmit="submitKYC(event)">
+        <div style="margin-bottom:20px;">
+          <label style="display:block; margin-bottom:8px; font-weight:600;">ID Type</label>
+          <select name="id_type" class="form-input" required>
+            <option value="NATIONAL_ID">Tanzania National ID</option>
+            <option value="PASSPORT">Passport</option>
+            <option value="VOTER_ID">Voter ID</option>
+          </select>
+        </div>
+        <div style="margin-bottom:20px;">
+          <label style="display:block; margin-bottom:8px; font-weight:600;">ID Number</label>
+          <input type="text" name="id_number" class="form-input" placeholder="Enter your document number" required>
+        </div>
+        <div style="margin-bottom:20px;">
+          <label style="display:block; margin-bottom:8px; font-weight:600;">Country</label>
+          <select name="country" class="form-input">
+            <option value="TZ">Tanzania (TZ)</option>
+            <option value="KE">Kenya (KE)</option>
+            <option value="UG">Uganda (UG)</option>
+            <option value="RW">Rwanda (RW)</option>
+          </select>
+        </div>
+        <div style="margin-bottom:20px;">
+          <label style="display:block; margin-bottom:8px; font-weight:600;">Selfie Photo <span style="color:var(--text-muted);">(optional)</span></label>
+          <input type="file" name="selfie_image" class="form-input" accept="image/*">
+        </div>
+        <div style="margin-bottom:28px;">
+          <label style="display:block; margin-bottom:8px; font-weight:600;">ID Document Photo <span style="color:var(--text-muted);">(optional)</span></label>
+          <input type="file" name="id_image" class="form-input" accept="image/*">
+        </div>
+
+        <button type="submit" id="submitBtn" class="btn btn-primary" style="width:100%; padding:14px;">
+          Submit for Verification
+        </button>
+        <p id="kycMsg" style="margin-top:12px; text-align:center; font-size:0.85rem;"></p>
+      </form>
+    </div>
+
+    <div style="margin-top:20px; padding:16px; background:rgba(255,255,255,0.02); border-radius:12px;">
+      <p style="margin:0; font-size:0.85rem; color:var(--text-muted);">
+        🔒 Your data is encrypted and processed securely. ID numbers are masked after verification.
+        Documents are never shared with third parties.
+      </p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<style>
+.form-input {
+  width:100%; padding:10px 14px;
+  background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);
+  border-radius:8px; color:var(--text-primary); font-size:0.9rem; box-sizing:border-box;
+}
+.form-input:focus { outline:none; border-color:var(--amber); }
+.kyc-status-badge {
+  border-radius: 12px; padding: 16px 20px; margin-bottom: 28px;
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+}
+.kyc-status-approved {
+  background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3);
+}
+.kyc-status-rejected {
+  background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+}
+.kyc-status-pending {
+  background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3);
+}
+.kyc-status-flagged {
+  background: rgba(255,165,0,0.1); border: 1px solid rgba(255,165,0,0.3);
+}
+</style>
+
+<script>
+async function submitKYC(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = 'Submitting…';
+  const form = new FormData(e.target);
+  try {
+    const res  = await fetch('/api/kyc/submit', { method:'POST', credentials:'include', body: form });
+    const data = await res.json();
+    const msg  = document.getElementById('kycMsg');
+    if (data.status === 'success') {
+      msg.style.color = '#10b981';
+      msg.textContent = data.message || 'Submitted successfully. We will notify you of the result.';
+      btn.textContent = '✅ Submitted';
+    } else {
+      msg.style.color = '#ef4444';
+      msg.textContent = data.message || 'Submission failed.';
+      btn.disabled = false; btn.textContent = 'Submit for Verification';
+    }
+  } catch(err) {
+    document.getElementById('kycMsg').textContent = 'Network error. Please try again.';
+    btn.disabled = false; btn.textContent = 'Submit for Verification';
+  }
+}
+</script>
+{% endblock %}

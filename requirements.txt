@@ -11,3 +11,6 @@ gunicorn==22.0.0
 psycopg2-binary==2.9.9
 sendgrid
 sib-api-v3-sdk
+# Phase 8 additions
+cloudinary
+firebase-admin

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Notifications — SafaraOne{% endblock %}
+
+{% block content %}
+<section style="min-height:80vh; padding: 80px 24px;">
+  <div style="max-width:700px; margin:0 auto;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:32px;">
+      <h1 style="font-size:2rem; font-weight:800; color:var(--amber);">🔔 Notifications</h1>
+      {% if notifications %}
+      <button id="markAllBtn" class="btn btn-ghost" style="font-size:0.85rem;"
+              onclick="markAllRead()">Mark all read</button>
+      {% endif %}
+    </div>
+
+    {% if notifications %}
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        {% for n in notifications %}
+        <div class="notif-card {% if not n.is_read %}notif-unread{% endif %}"
+             onclick="{% if n.link %}window.location='{{ n.link }}'{% endif %}"
+             style="{% if n.link %}cursor:pointer;{% endif %}">
+          <div style="display:flex; align-items:flex-start; gap:14px;">
+            <div class="notif-icon">
+              {% if 'confirmed' in n.type %}✅
+              {% elif 'cancelled' in n.type %}❌
+              {% elif 'review' in n.type %}⭐
+              {% elif 'kyc_approved' in n.type %}🎉
+              {% elif 'kyc_rejected' in n.type %}⚠️
+              {% elif 'escrow' in n.type or 'payment' in n.type %}💰
+              {% else %}🔔{% endif %}
+            </div>
+            <div style="flex:1;">
+              <p style="font-weight:700; margin:0 0 4px; color:var(--text-primary);">{{ n.title }}</p>
+              <p style="margin:0; color:var(--text-secondary); font-size:0.9rem;">{{ n.message }}</p>
+              <p style="margin:4px 0 0; font-size:0.78rem; color:var(--text-muted);">
+                {{ n.created_at[:16].replace('T', ' ') if n.created_at else '' }}
+              </p>
+            </div>
+            {% if not n.is_read %}
+            <div style="width:8px; height:8px; background:#ef4444; border-radius:50%; flex-shrink:0; margin-top:4px;"></div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div style="text-align:center; padding:80px 0; color:var(--text-muted);">
+        <div style="font-size:4rem; margin-bottom:16px;">🔔</div>
+        <h3>You're all caught up!</h3>
+        <p>No notifications yet. They'll appear here after activities like booking confirmations and reviews.</p>
+        <a href="/" class="btn btn-primary" style="margin-top:24px;">Explore SafaraOne</a>
+      </div>
+    {% endif %}
+  </div>
+</section>
+
+<style>
+.notif-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 18px 20px;
+  transition: background 0.2s;
+}
+.notif-card:hover { background: rgba(255,255,255,0.08); }
+.notif-unread {
+  border-left: 3px solid var(--amber);
+  background: rgba(245,158,11,0.05);
+}
+.notif-icon { font-size: 1.4rem; line-height: 1; flex-shrink: 0; }
+</style>
+
+<script>
+async function markAllRead() {
+  try {
+    await fetch('/api/notifications/read-all', { method: 'POST', credentials: 'include' });
+    document.querySelectorAll('.notif-unread').forEach(el => {
+      el.classList.remove('notif-unread');
+    });
+    document.querySelectorAll('.notif-card div[style*="background:#ef4444"]').forEach(el => el.remove());
+    document.getElementById('notifCount') && (document.getElementById('notifCount').style.display = 'none');
+  } catch(e) { alert('Failed to mark notifications as read.'); }
+}
+</script>
+{% endblock %}

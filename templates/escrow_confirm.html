@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Confirm Tour Complete — SafaraOne{% endblock %}
+
+{% block content %}
+<section style="min-height:80vh; padding:80px 24px; display:flex; align-items:center; justify-content:center;">
+  <div style="max-width:520px; width:100%;">
+    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:40px;">
+      <div style="text-align:center; margin-bottom:32px;">
+        <div style="font-size:4rem;">🏁</div>
+        <h1 style="font-size:1.8rem; font-weight:800; margin:16px 0 8px;">Tour Complete?</h1>
+        <p style="color:var(--text-secondary);">Confirm that your tour experience was completed and release the guide's payment.</p>
+      </div>
+
+      <!-- Booking summary -->
+      <div style="background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.2); border-radius:12px; padding:20px; margin-bottom:24px;">
+        <p style="margin:0 0 8px; font-weight:700; color:var(--amber);">Booking #{{ booking.id }}</p>
+        <p style="margin:0 0 4px; color:var(--text-secondary);">{{ booking.item_name or 'Tour Experience' }}</p>
+        {% if booking.scheduled_date %}
+        <p style="margin:0; color:var(--text-muted); font-size:0.9rem;">
+          📅 {{ booking.scheduled_date.strftime('%B %d, %Y') }}
+        </p>
+        {% endif %}
+      </div>
+
+      {% if escrow %}
+      <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); border-radius:12px; padding:20px; margin-bottom:28px;">
+        <h3 style="margin:0 0 12px; font-size:1rem;">Payment Breakdown</h3>
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+          <span style="color:var(--text-secondary);">Escrow balance</span>
+          <span style="font-weight:600;">${{ "%.2f"|format(escrow.escrow_amount) }} USD</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+          <span style="color:var(--text-secondary);">SafaraOne fee ({{ commission_pct }}%)</span>
+          <span style="color:#ef4444;">-${{ "%.2f"|format(escrow.escrow_amount * commission_pct / 100) }} USD</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding-top:8px; border-top:1px solid rgba(255,255,255,0.1);">
+          <span style="font-weight:700;">Guide receives</span>
+          <span style="font-weight:800; color:#10b981; font-size:1.1rem;">${{ "%.2f"|format(net_to_guide) }} USD</span>
+        </div>
+      </div>
+
+      {% if escrow.status == 'holding' %}
+      <button id="confirmBtn" class="btn btn-primary" style="width:100%; font-size:1rem; padding:14px;"
+              onclick="confirmTour({{ booking.id }})">
+        ✅ Confirm Tour Complete &amp; Release Payment
+      </button>
+      <p style="text-align:center; font-size:0.8rem; color:var(--text-muted); margin-top:12px;">
+        This action cannot be undone. Only confirm if your tour is truly complete.
+      </p>
+      {% elif escrow.status == 'settled' %}
+      <div style="text-align:center; padding:20px; background:rgba(16,185,129,0.1); border-radius:12px;">
+        <p style="color:#10b981; font-weight:700; margin:0;">✅ Payment already released</p>
+        <p style="color:var(--text-muted); font-size:0.85rem; margin:8px 0 0;">
+          Settled on {{ escrow.settled_at.strftime('%b %d, %Y') if escrow.settled_at else '—' }}
+        </p>
+      </div>
+      {% endif %}
+      {% else %}
+      <div style="text-align:center; padding:20px;">
+        <p style="color:var(--text-muted);">No escrow record found for this booking. Please contact support.</p>
+      </div>
+      {% endif %}
+
+      <div style="text-align:center; margin-top:20px;">
+        <a href="/my-trips" style="color:var(--text-muted); font-size:0.85rem;">← Back to My Trips</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+async function confirmTour(bookingId) {
+  const btn = document.getElementById('confirmBtn');
+  btn.disabled = true;
+  btn.textContent = 'Processing…';
+  try {
+    const res  = await fetch(`/api/escrow/settle/${bookingId}`, { method: 'POST', credentials: 'include' });
+    const data = await res.json();
+    if (data.status === 'success') {
+      btn.textContent = '✅ Payment Released!';
+      btn.style.background = '#10b981';
+      setTimeout(() => window.location.href = '/my-trips', 2000);
+    } else {
+      alert(data.message || 'Settlement failed. Please contact support.');
+      btn.disabled = false;
+      btn.textContent = '✅ Confirm Tour Complete & Release Payment';
+    }
+  } catch(e) {
+    alert('Network error. Please try again.');
+    btn.disabled = false;
+    btn.textContent = '✅ Confirm Tour Complete & Release Payment';
+  }
+}
+</script>
+{% endblock %}

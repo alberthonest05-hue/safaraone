@@ -13,6 +13,16 @@ class User(db.Model):
     role = db.Column(db.String(20), default="tourist") # "tourist", "guide", "admin"
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # ── Phase 8 additions ──────────────────────────────────────────────────
+    # "instant" = confirm right after payment | "request" = guide reviews first
+    booking_type       = db.Column(db.String(20), nullable=True, default="request")
+    # Flutterwave sub-account ID for automated payouts
+    flw_sub_account_id = db.Column(db.String(100), nullable=True)
+    # Set to True by admin after KYC is approved
+    is_verified        = db.Column(db.Boolean, default=False)
+    # Admin flag
+    is_admin           = db.Column(db.Boolean, default=False)
+
     def set_password(self, password):
         # We remove the hardcoded method and let the system use its most modern default scrambler
         self.password_hash = generate_password_hash(password)
@@ -239,25 +249,281 @@ class Booking(db.Model):
 
 
 class Review(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    item_type = db.Column(db.String(50), nullable=False) # 'accommodation', 'experience', 'guide'
-    item_id = db.Column(db.String(50), nullable=False)
-    rating = db.Column(db.Integer, nullable=False) # 1-5
-    comment = db.Column(db.Text)
+    """
+    Phase 8 verified review — linked to a specific confirmed booking.
+    One review per booking (unique constraint on booking_id).
+    """
+    __tablename__ = "review"
+
+    id          = db.Column(db.Integer, primary_key=True)
+    tourist_id  = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    # Legacy field — kept for backward-compat queries
+    user_id     = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    booking_id  = db.Column(db.Integer, db.ForeignKey("booking.id"), nullable=True, unique=True)
+    item_type   = db.Column(db.String(50), nullable=False)  # guide | accommodation | experience
+    item_id     = db.Column(db.String(50), nullable=False)
+    rating      = db.Column(db.Integer, nullable=False)     # 1–5
+    comment     = db.Column(db.Text, nullable=True)
+    is_visible  = db.Column(db.Boolean, default=True)       # admin can hide abusive reviews
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+
+    tourist     = db.relationship("User", foreign_keys=[tourist_id], backref="reviews", lazy=True)
+    booking     = db.relationship("Booking", backref="review", lazy=True, uselist=False)
+
+    def to_dict(self):
+        tourist_name = "Anonymous"
+        try:
+            tourist_name = self.tourist.username if self.tourist else "Anonymous"
+        except Exception:
+            pass
+        return {
+            "id":           self.id,
+            "tourist_id":   self.tourist_id,
+            "user_id":      self.user_id,
+            "tourist_name": tourist_name,
+            "booking_id":   self.booking_id,
+            "item_type":    self.item_type,
+            "item_id":      self.item_id,
+            "rating":       self.rating,
+            "comment":      self.comment,
+            "created_at":   self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# =============================================================================
+# PHASE 8 MODELS
+# =============================================================================
+
+# DAY 2 ───────────────────────────────────────────────────────────────────────
+
+class Availability(db.Model):
+    """Dates on which a guide is UNAVAILABLE. One record = one blocked date."""
+    __tablename__ = "availability"
+    __table_args__ = (
+        db.UniqueConstraint("guide_id", "date", name="uq_guide_date"),
+    )
+
+    id         = db.Column(db.Integer, primary_key=True)
+    guide_id   = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    date       = db.Column(db.Date, nullable=False)
+    reason     = db.Column(db.String(200), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    __table_args__ = (
-        db.UniqueConstraint('user_id', 'item_type', 'item_id', name='unique_user_review'),
-    )
+    guide      = db.relationship("User", backref="blocked_dates", lazy=True)
+
+    def to_dict(self):
+        return {"id": self.id, "date": str(self.date), "reason": self.reason}
+
+
+class Notification(db.Model):
+    """In-app notification for any user. Also dispatched via FCM where configured."""
+    __tablename__ = "notification"
+
+    TYPES = {
+        "booking_confirmed":  "Booking Confirmed",
+        "booking_cancelled":  "Booking Cancelled",
+        "review_received":    "New Review",
+        "payment_released":   "Payment Released",
+        "kyc_approved":       "Identity Verified",
+        "kyc_rejected":       "Verification Failed",
+        "escrow_settled":     "Tour Payment Settled",
+        "general":            "Notification",
+    }
+
+    id         = db.Column(db.Integer, primary_key=True)
+    user_id    = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    notif_type = db.Column(db.String(50), nullable=False, default="general")
+    title      = db.Column(db.String(200), nullable=False)
+    message    = db.Column(db.Text, nullable=False)
+    is_read    = db.Column(db.Boolean, default=False)
+    link       = db.Column(db.String(400), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user       = db.relationship("User", backref="notifications", lazy=True)
 
     def to_dict(self):
         return {
-            "id": self.id,
-            "user_id": self.user_id,
-            "item_type": self.item_type,
-            "item_id": self.item_id,
-            "rating": self.rating,
-            "comment": self.comment,
-            "created_at": self.created_at.isoformat() if self.created_at else None
+            "id":         self.id,
+            "type":       self.notif_type,
+            "title":      self.title,
+            "message":    self.message,
+            "is_read":    self.is_read,
+            "link":       self.link,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class UserFCMToken(db.Model):
+    """Device push notification token (Firebase Cloud Messaging)."""
+    __tablename__ = "user_fcm_token"
+
+    id         = db.Column(db.Integer, primary_key=True)
+    user_id    = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    token      = db.Column(db.String(300), nullable=False)
+    platform   = db.Column(db.String(20), nullable=True, default="web")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# DAY 3 ───────────────────────────────────────────────────────────────────────
+
+class EscrowTransaction(db.Model):
+    """
+    Tracks the escrow lifecycle for a single booking.
+    holding → settled | refunded
+    """
+    __tablename__ = "escrow_transaction"
+
+    id              = db.Column(db.Integer, primary_key=True)
+    booking_id      = db.Column(db.Integer, db.ForeignKey("booking.id"), nullable=False, unique=True)
+    total_amount    = db.Column(db.Float, nullable=False)
+    deposit_pct     = db.Column(db.Float, default=20.0)
+    deposit_amount  = db.Column(db.Float, nullable=False)
+    escrow_amount   = db.Column(db.Float, nullable=False)
+    deposit_flw_id  = db.Column(db.String(100), nullable=True)
+    settle_flw_id   = db.Column(db.String(100), nullable=True)
+    status          = db.Column(db.String(20), default="holding")
+    settled_at      = db.Column(db.DateTime, nullable=True)
+    created_at      = db.Column(db.DateTime, default=datetime.utcnow)
+
+    booking         = db.relationship("Booking", backref="escrow", lazy=True, uselist=False)
+
+    def to_dict(self):
+        return {
+            "id":             self.id,
+            "booking_id":     self.booking_id,
+            "total_amount":   self.total_amount,
+            "deposit_pct":    self.deposit_pct,
+            "deposit_amount": self.deposit_amount,
+            "escrow_amount":  self.escrow_amount,
+            "status":         self.status,
+            "settled_at":     self.settled_at.isoformat() if self.settled_at else None,
+        }
+
+
+class PricingRule(db.Model):
+    """Dynamic pricing configuration for a guide/stay/experience listing."""
+    __tablename__ = "pricing_rule"
+
+    id                     = db.Column(db.Integer, primary_key=True)
+    operator_id            = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    item_type              = db.Column(db.String(20), nullable=False)
+    item_id                = db.Column(db.Integer, nullable=False)
+    low_load_threshold     = db.Column(db.Float, default=25.0)
+    low_load_multiplier    = db.Column(db.Float, default=0.85)
+    high_load_threshold    = db.Column(db.Float, default=75.0)
+    high_load_multiplier   = db.Column(db.Float, default=1.20)
+    last_minute_hours      = db.Column(db.Integer, default=48)
+    last_minute_multiplier = db.Column(db.Float, default=0.90)
+    max_capacity           = db.Column(db.Integer, default=10)
+    is_active              = db.Column(db.Boolean, default=True)
+    created_at             = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at             = db.Column(db.DateTime, onupdate=datetime.utcnow)
+
+    operator               = db.relationship("User", backref="pricing_rules", lazy=True)
+
+    def to_dict(self):
+        return {
+            "id":                     self.id,
+            "item_type":              self.item_type,
+            "item_id":                self.item_id,
+            "low_load_threshold":     self.low_load_threshold,
+            "low_load_multiplier":    self.low_load_multiplier,
+            "high_load_threshold":    self.high_load_threshold,
+            "high_load_multiplier":   self.high_load_multiplier,
+            "last_minute_hours":      self.last_minute_hours,
+            "last_minute_multiplier": self.last_minute_multiplier,
+            "max_capacity":           self.max_capacity,
+            "is_active":              self.is_active,
+        }
+
+
+class CommissionLedger(db.Model):
+    """Immutable log of every commission extraction. Append-only audit trail."""
+    __tablename__ = "commission_ledger"
+
+    id               = db.Column(db.Integer, primary_key=True)
+    booking_id       = db.Column(db.Integer, db.ForeignKey("booking.id"), nullable=False)
+    escrow_id        = db.Column(db.Integer, db.ForeignKey("escrow_transaction.id"), nullable=True)
+    gross_amount     = db.Column(db.Float, nullable=False)
+    commission_rate  = db.Column(db.Float, nullable=False)
+    commission_amount= db.Column(db.Float, nullable=False)
+    net_to_operator  = db.Column(db.Float, nullable=False)
+    extracted_at     = db.Column(db.DateTime, default=datetime.utcnow)
+
+    booking          = db.relationship("Booking", backref="commission_records", lazy=True)
+
+    def to_dict(self):
+        return {
+            "id":                self.id,
+            "booking_id":        self.booking_id,
+            "gross_amount":      self.gross_amount,
+            "commission_rate":   self.commission_rate,
+            "commission_amount": self.commission_amount,
+            "net_to_operator":   self.net_to_operator,
+            "extracted_at":      self.extracted_at.isoformat() if self.extracted_at else None,
+        }
+
+
+# DAY 4 ───────────────────────────────────────────────────────────────────────
+
+class KYCRecord(db.Model):
+    """Identity verification record for a guide. One per guide."""
+    __tablename__ = "kyc_record"
+
+    id               = db.Column(db.Integer, primary_key=True)
+    guide_id         = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True)
+    smile_job_id     = db.Column(db.String(100), nullable=True)
+    id_type          = db.Column(db.String(50),  nullable=True)
+    id_number        = db.Column(db.String(100), nullable=True)
+    country          = db.Column(db.String(10),  nullable=True, default="TZ")
+    status           = db.Column(db.String(20), default="pending")
+    confidence_value = db.Column(db.Float, nullable=True)
+    risk_score       = db.Column(db.Float, nullable=True)
+    admin_notes      = db.Column(db.Text, nullable=True)
+    submitted_at     = db.Column(db.DateTime, default=datetime.utcnow)
+    reviewed_at      = db.Column(db.DateTime, nullable=True)
+
+    guide            = db.relationship("User", backref="kyc_record", lazy=True, uselist=False)
+
+    def to_dict(self):
+        return {
+            "id":               self.id,
+            "guide_id":         self.guide_id,
+            "id_type":          self.id_type,
+            "country":          self.country,
+            "status":           self.status,
+            "confidence_value": self.confidence_value,
+            "risk_score":       self.risk_score,
+            "admin_notes":      self.admin_notes,
+            "submitted_at":     self.submitted_at.isoformat() if self.submitted_at else None,
+            "reviewed_at":      self.reviewed_at.isoformat() if self.reviewed_at else None,
+        }
+
+
+class GuideVideo(db.Model):
+    """Guide's 60-second video intro, stored on Cloudinary. One per guide."""
+    __tablename__ = "guide_video"
+
+    id                   = db.Column(db.Integer, primary_key=True)
+    guide_id             = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True)
+    cloudinary_public_id = db.Column(db.String(300), nullable=False)
+    cloudinary_url       = db.Column(db.String(500), nullable=False)
+    cloudinary_thumbnail = db.Column(db.String(500), nullable=True)
+    duration_seconds     = db.Column(db.Integer, nullable=True)
+    status               = db.Column(db.String(20), default="pending")
+    rejection_reason     = db.Column(db.String(300), nullable=True)
+    uploaded_at          = db.Column(db.DateTime, default=datetime.utcnow)
+    approved_at          = db.Column(db.DateTime, nullable=True)
+
+    guide                = db.relationship("User", backref="video_intro", lazy=True, uselist=False)
+
+    def to_dict(self):
+        return {
+            "id":                    self.id,
+            "guide_id":              self.guide_id,
+            "cloudinary_url":        self.cloudinary_url,
+            "cloudinary_thumbnail":  self.cloudinary_thumbnail,
+            "duration_seconds":      self.duration_seconds,
+            "status":                self.status,
+            "uploaded_at":           self.uploaded_at.isoformat() if self.uploaded_at else None,
         }

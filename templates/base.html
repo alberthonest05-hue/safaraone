@@ -64,6 +64,13 @@
         {% if current_user_role == 'tourist' %}
           <a href="/become-guide-info" class="btn btn-ghost" style="color:var(--amber); border: 1px solid var(--amber);">Become a Guide</a>
         {% endif %}
+        <!-- Phase 8 — Notification Bell -->
+        {% if current_user_name %}
+        <a href="/notifications" class="nav-notif-btn" id="notifBell" aria-label="Notifications">
+          🔔
+          <span class="notif-count" id="notifCount" style="display:none;">0</span>
+        </a>
+        {% endif %}
         <span style="color: var(--amber); font-weight: 600; margin-right: 16px; font-size: 0.95rem;">
           Welcome, {{ current_user_name }}
         </span>
@@ -190,6 +197,35 @@
     // Refresh the page so the "Sign In" buttons come back
     window.location.reload();
   }
+</script>
+<style>
+.nav-notif-btn {
+  position: relative; text-decoration: none; font-size: 18px;
+  margin-right: 12px; display: inline-flex; align-items: center;
+}
+.notif-count {
+  position: absolute; top: -6px; right: -8px;
+  background: #ef4444; color: #fff;
+  font-size: 10px; font-weight: 700;
+  border-radius: 99px; padding: 1px 5px;
+  min-width: 16px; text-align: center; line-height: 1.4;
+}
+</style>
+
+<script>
+// Phase 8 — Fetch unread notification count using cookies (no localStorage needed)
+(async () => {
+  try {
+    const res   = await fetch('/api/notifications?unread_only=true&limit=1', { credentials: 'include' });
+    if (!res.ok) return;
+    const data  = await res.json();
+    const count = data.unread_count || 0;
+    if (count > 0) {
+      const badge = document.getElementById('notifCount');
+      if (badge) { badge.textContent = count > 99 ? '99+' : count; badge.style.display = 'inline'; }
+    }
+  } catch(e) {}
+})();
 </script>
 {% block scripts %}{% endblock %}
 </body>

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Host Dashboard — SafaraOne{% endblock %}
+
+{% block content %}
+<section style="padding:80px 24px; min-height:80vh;">
+  <div style="max-width:1100px; margin:0 auto;">
+    <div style="margin-bottom:40px;">
+      <h1 style="font-size:2rem; font-weight:800; color:var(--amber); margin-bottom:8px;">
+        🏠 Host Dashboard
+      </h1>
+      <p style="color:var(--text-secondary);">Welcome back, {{ host.username }}. Here is a summary of your listings.</p>
+    </div>
+
+    <!-- Stats Row -->
+    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:48px;">
+      <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:24px;">
+        <p style="margin:0 0 8px; font-size:0.85rem; color:var(--text-muted);">Total Bookings</p>
+        <p style="margin:0; font-size:2rem; font-weight:800;">{{ stats.total_bookings }}</p>
+      </div>
+      <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); border-radius:16px; padding:24px;">
+        <p style="margin:0 0 8px; font-size:0.85rem; color:var(--text-muted);">Confirmed</p>
+        <p style="margin:0; font-size:2rem; font-weight:800; color:#10b981;">{{ stats.confirmed }}</p>
+      </div>
+      <div style="background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.2); border-radius:16px; padding:24px;">
+        <p style="margin:0 0 8px; font-size:0.85rem; color:var(--text-muted);">Pending</p>
+        <p style="margin:0; font-size:2rem; font-weight:800; color:var(--amber);">{{ stats.pending }}</p>
+      </div>
+      <div style="background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.2); border-radius:16px; padding:24px;">
+        <p style="margin:0 0 8px; font-size:0.85rem; color:var(--text-muted);">Revenue (USD)</p>
+        <p style="margin:0; font-size:2rem; font-weight:800; color:#6366f1;">${{ "%.0f"|format(stats.total_revenue) }}</p>
+      </div>
+    </div>
+
+    <!-- Recent Bookings -->
+    <h2 style="font-size:1.3rem; font-weight:700; margin-bottom:16px;">Recent Bookings</h2>
+    {% if bookings %}
+    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08); border-radius:16px; overflow:hidden; margin-bottom:48px;">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="background:rgba(255,255,255,0.05);">
+            <th style="padding:14px 20px; text-align:left; font-size:0.8rem; color:var(--text-muted);">BOOKING ID</th>
+            <th style="padding:14px 20px; text-align:left; font-size:0.8rem; color:var(--text-muted);">TYPE</th>
+            <th style="padding:14px 20px; text-align:left; font-size:0.8rem; color:var(--text-muted);">DATE</th>
+            <th style="padding:14px 20px; text-align:left; font-size:0.8rem; color:var(--text-muted);">AMOUNT</th>
+            <th style="padding:14px 20px; text-align:left; font-size:0.8rem; color:var(--text-muted);">STATUS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in bookings[:15] %}
+          <tr style="border-top:1px solid rgba(255,255,255,0.05);">
+            <td style="padding:14px 20px; font-weight:600;">#{{ b.id }}</td>
+            <td style="padding:14px 20px; color:var(--text-secondary);">{{ b.item_type.title() }}</td>
+            <td style="padding:14px 20px; color:var(--text-secondary); font-size:0.85rem;">
+              {{ b.scheduled_date.strftime('%b %d, %Y') if b.scheduled_date else '—' }}
+            </td>
+            <td style="padding:14px 20px; font-weight:600;">${{ "%.2f"|format(b.amount_usd) }}</td>
+            <td style="padding:14px 20px;">
+              <span style="padding:4px 12px; border-radius:99px; font-size:0.75rem; font-weight:700;
+                {% if b.status == 'confirmed' %}background:rgba(16,185,129,0.15); color:#10b981;
+                {% elif b.status == 'pending' %}background:rgba(245,158,11,0.15); color:var(--amber);
+                {% elif b.status == 'cancelled' %}background:rgba(239,68,68,0.15); color:#ef4444;
+                {% else %}background:rgba(255,255,255,0.05); color:var(--text-muted);
+                {% endif %}">
+                {{ b.status.title() }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p style="color:var(--text-muted); margin-bottom:48px;">No bookings yet for your listings.</p>
+    {% endif %}
+
+    <!-- Recent Reviews -->
+    {% if recent_reviews %}
+    <h2 style="font-size:1.3rem; font-weight:700; margin-bottom:16px;">Recent Reviews</h2>
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      {% for r in recent_reviews %}
+      <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:20px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <span style="font-weight:600;">{{ r.tourist.username if r.tourist else 'Anonymous' }}</span>
+          <span style="color:var(--amber);">{{ '★' * r.rating }}{{ '☆' * (5 - r.rating) }}</span>
+        </div>
+        {% if r.comment %}
+        <p style="margin:0; color:var(--text-secondary); font-size:0.9rem;">{{ r.comment }}</p>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

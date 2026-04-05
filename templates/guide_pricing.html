@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Dynamic Pricing — SafaraOne{% endblock %}
+
+{% block content %}
+<section style="min-height:80vh; padding:80px 24px;">
+  <div style="max-width:800px; margin:0 auto;">
+    <h1 style="font-size:2rem; font-weight:800; margin-bottom:8px; color:var(--amber);">⚡ Dynamic Pricing</h1>
+    <p style="color:var(--text-secondary); margin-bottom:40px;">
+      Set smart pricing rules that automatically apply discounts during quiet periods and premiums during peak demand.
+    </p>
+
+    <!-- Add Rule Form -->
+    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:32px; margin-bottom:40px;">
+      <h2 style="font-size:1.2rem; font-weight:700; margin-bottom:24px;">Create / Update Rule</h2>
+      <form id="ruleForm" onsubmit="saveRule(event)">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+          <div>
+            <label style="display:block; margin-bottom:6px; font-size:0.85rem; color:var(--text-secondary);">Item Type</label>
+            <select name="item_type" class="form-input" required>
+              <option value="guide">Guide</option>
+              <option value="accommodation">Accommodation</option>
+              <option value="experience">Experience</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block; margin-bottom:6px; font-size:0.85rem; color:var(--text-secondary);">Item ID</label>
+            <input type="number" name="item_id" class="form-input" placeholder="e.g. 5" required>
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:16px;">
+          <div>
+            <label style="display:block; margin-bottom:6px; font-size:0.85rem; color:var(--text-secondary);">Low Load Threshold (%)</label>
+            <input type="number" name="low_load_threshold" class="form-input" value="25" min="0" max="100">
+          </div>
+          <div>
+            <label style="display:block; margin-bottom:6px; font-size:0.85rem; color:var(--text-secondary);">Low Load Multiplier</label>
+            <input type="number" name="low_load_multiplier" class="form-input" value="0.85" step="0.01" min="0.5" max="3.0">
+          </div>
+          <div>
+            <label style="display:block; margin-bottom:6px; font-size:0.85rem; color:var(--text-secondary);">Max Capacity</label>
+            <input type="number" name="max_capacity" class="form-input" value="10" min="1">
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:24px;">
+          <div>
+            <label style="display:block; margin-bottom:6px; font-size:0.85rem; color:var(--text-secondary);">High Load Threshold (%)</label>
+            <input type="number" name="high_load_threshold" class="form-input" value="75" min="0" max="100">
+          </div>
+          <div>
+            <label style="display:block; margin-bottom:6px; font-size:0.85rem; color:var(--text-secondary);">High Load Multiplier</label>
+            <input type="number" name="high_load_multiplier" class="form-input" value="1.20" step="0.01" min="0.5" max="3.0">
+          </div>
+          <div>
+            <label style="display:block; margin-bottom:6px; font-size:0.85rem; color:var(--text-secondary);">Last-Minute Hours</label>
+            <input type="number" name="last_minute_hours" class="form-input" value="48" min="1">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Save Rule</button>
+        <span id="ruleMsg" style="margin-left:16px; font-size:0.85rem;"></span>
+      </form>
+    </div>
+
+    <!-- Existing Rules -->
+    <h2 style="font-size:1.2rem; font-weight:700; margin-bottom:16px;">Your Pricing Rules</h2>
+    {% if rules %}
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      {% for r in rules %}
+      <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:20px; display:flex; align-items:center; justify-content:space-between;">
+        <div>
+          <p style="margin:0 0 4px; font-weight:700;">{{ r.item_type.title() }} #{{ r.item_id }}</p>
+          <p style="margin:0; font-size:0.85rem; color:var(--text-secondary);">
+            Low: {{ r.low_load_multiplier }}x below {{ r.low_load_threshold }}% |
+            High: {{ r.high_load_multiplier }}x above {{ r.high_load_threshold }}% |
+            Last-min: {{ r.last_minute_multiplier }}x within {{ r.last_minute_hours }}h
+          </p>
+        </div>
+        <button onclick="deleteRule({{ r.id }})" class="btn btn-ghost" style="color:#ef4444; border-color:#ef4444; font-size:0.8rem;">Delete</button>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p style="color:var(--text-muted);">No pricing rules yet. Create your first rule above.</p>
+    {% endif %}
+  </div>
+</section>
+
+<style>
+.form-input {
+  width: 100%; padding: 10px 14px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px; color: var(--text-primary);
+  font-size: 0.9rem; box-sizing: border-box;
+}
+.form-input:focus { outline: none; border-color: var(--amber); }
+</style>
+
+<script>
+async function saveRule(e) {
+  e.preventDefault();
+  const form = e.target;
+  const data = {};
+  new FormData(form).forEach((v, k) => data[k] = isNaN(v) ? v : parseFloat(v));
+  const res  = await fetch('/api/pricing/rules', {
+    method: 'POST', credentials: 'include',
+    headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
+  });
+  const json = await res.json();
+  const msg  = document.getElementById('ruleMsg');
+  if (json.status === 'success') {
+    msg.style.color = '#10b981'; msg.textContent = 'Saved! Refresh to see changes.';
+  } else {
+    msg.style.color = '#ef4444'; msg.textContent = json.message || 'Error saving rule.';
+  }
+}
+async function deleteRule(id) {
+  if (!confirm('Delete this pricing rule?')) return;
+  await fetch(`/api/pricing/rules/${id}`, { method: 'DELETE', credentials: 'include' });
+  window.location.reload();
+}
+</script>
+{% endblock %}

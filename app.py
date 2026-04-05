@@ -16,7 +16,8 @@ from datetime import datetime, timedelta, timezone
 # Phase 2: Load environment variables FIRST before importing models/services
 load_dotenv()
 
-from models import db, User, Destination, Accommodation, Experience, Guide, Booking, Review
+from models import db, User, Destination, Accommodation, Experience, Guide, Booking, Review, \
+    Availability, Notification, EscrowTransaction, PricingRule, CommissionLedger, KYCRecord, GuideVideo
 from sqlalchemy import distinct
 from flask_jwt_extended import (
     JWTManager, create_access_token, jwt_required, get_jwt_identity, 
@@ -36,6 +37,37 @@ except Exception as _email_import_err:
     logging.warning(f'[EMAIL] Could not import email_service: {_email_import_err}')
     def send_booking_receipt(*a, **kw): return False
     def send_cancellation_email(*a, **kw): return False
+
+# Phase 8: Notification service
+try:
+    from services.notification_service import notify, notify_booking_confirmed, notify_review_received
+except Exception as _notif_import_err:
+    import logging
+    logging.warning(f'[NOTIFY] Could not import notification_service: {_notif_import_err}')
+    def notify(*a, **kw): pass
+    def notify_booking_confirmed(*a, **kw): pass
+    def notify_review_received(*a, **kw): pass
+
+# Phase 8: Escrow service
+try:
+    from services.escrow_service import initiate_escrow, settle_escrow, refund_escrow, compute_dynamic_price
+except Exception as _escrow_import_err:
+    import logging
+    logging.warning(f'[ESCROW] Could not import escrow_service: {_escrow_import_err}')
+    def initiate_escrow(*a, **kw): return {"status": "error"}
+    def settle_escrow(*a, **kw): return {"status": "error"}
+    def refund_escrow(*a, **kw): return {"status": "error"}
+    def compute_dynamic_price(base_price, *a, **kw): return {"base_price": base_price, "final_price": base_price, "multiplier": 1.0, "reason": "unavailable"}
+
+# Phase 8: KYC service
+try:
+    from services.kyc_service import submit_kyc, get_kyc_status, process_sumsub_webhook
+except Exception as _kyc_import_err:
+    import logging
+    logging.warning(f'[KYC] Could not import kyc_service: {_kyc_import_err}')
+    def submit_kyc(*a, **kw): return {"success": True, "stub": True}
+    def get_kyc_status(guide_id): return {"status": "not_submitted"}
+    def process_sumsub_webhook(*a, **kw): return False
 
 # Phase 7: In-memory FX rate cache (1-hour TTL)
 _tzs_rate_cache = {
@@ -79,6 +111,23 @@ app.config["JWT_COOKIE_CSRF_PROTECT"] = False # Simplify for dev
 db.init_app(app)
 jwt = JWTManager(app)
 
+# Phase 8: COMMISSION_RATE config
+app.config["COMMISSION_RATE"] = float(os.environ.get("COMMISSION_RATE", "0.10"))
+
+# Phase 8: Cloudinary init (graceful if keys are missing)
+try:
+    import cloudinary
+    import cloudinary.uploader
+    cloudinary.config(
+        cloud_name = os.environ.get("CLOUDINARY_CLOUD_NAME", ""),
+        api_key    = os.environ.get("CLOUDINARY_API_KEY", ""),
+        api_secret = os.environ.get("CLOUDINARY_API_SECRET", ""),
+        secure     = True,
+    )
+except Exception as _cloud_err:
+    import logging
+    logging.warning(f'[CLOUDINARY] Init failed: {_cloud_err}')
+
 @jwt.unauthorized_loader
 def unauthorized_callback(reason):
     # If the user is hitting an API route, return JSON
@@ -118,8 +167,83 @@ def inject_user():
     return {"current_user_role": None, "current_user_name": None, "current_user_id": None}
 
 
-with app.app_context():
+def _safe_migrate():
+    """
+    Non-destructive DB migration that runs on every startup.
+    Safe on Render free tier — no shell access needed.
+
+    Strategy:
+      1. db.create_all()  → creates any NEW tables, skips existing ones.
+      2. ALTER TABLE ...  → adds missing columns to existing tables.
+         Uses IF NOT EXISTS for PostgreSQL or a try/except for SQLite.
+    """
     db.create_all()
+
+    from sqlalchemy import inspect, text
+    engine   = db.engine
+    dialect  = engine.dialect.name   # 'postgresql' or 'sqlite'
+    inspector = inspect(engine)
+
+    # ── Columns to add to existing tables ────────────────────────────────────
+    # Format: (table_name, column_name, sql_type, default_sql)
+    migrations = [
+        # Phase 8 — User model additions
+        ("user", "booking_type",       "VARCHAR(20)",  "'request'"),
+        ("user", "flw_sub_account_id", "VARCHAR(100)", "NULL"),
+        ("user", "is_verified",        "BOOLEAN",      "FALSE"),
+        ("user", "is_admin",           "BOOLEAN",      "FALSE"),
+    ]
+
+    with engine.connect() as conn:
+        for table, column, col_type, default in migrations:
+            # Check if column already exists in the actual DB
+            try:
+                existing_cols = [c["name"] for c in inspector.get_columns(table)]
+            except Exception:
+                continue  # Table might not exist yet — create_all() handles it
+
+            if column in existing_cols:
+                continue  # Already there — nothing to do
+
+            try:
+                if dialect == "postgresql":
+                    # PostgreSQL supports ADD COLUMN IF NOT EXISTS directly
+                    sql = text(
+                        f"ALTER TABLE \"{table}\" "
+                        f"ADD COLUMN IF NOT EXISTS {column} {col_type} DEFAULT {default}"
+                    )
+                else:
+                    # SQLite doesn't support IF NOT EXISTS on ALTER TABLE,
+                    # but we already checked above so this is safe
+                    sql = text(
+                        f"ALTER TABLE \"{table}\" "
+                        f"ADD COLUMN {column} {col_type} DEFAULT {default}"
+                    )
+                conn.execute(sql)
+                conn.commit()
+                print(f"[MIGRATE] ✅ Added column {table}.{column}")
+            except Exception as col_err:
+                # Column might already exist (race condition), safe to ignore
+                print(f"[MIGRATE] ℹ️  Skipped {table}.{column}: {col_err}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
+    print("[MIGRATE] ✅ Schema migration complete")
+
+
+with app.app_context():
+    try:
+        _safe_migrate()
+    except Exception as _migrate_err:
+        # Never crash the app on migration failure — log and continue
+        print(f"[MIGRATE] ⚠️  Migration error (non-fatal): {_migrate_err}")
+        try:
+            db.create_all()  # Fallback: at least create new tables
+        except Exception:
+            pass
+
     # Auto-seed if database is empty
     try:
         from models import Destination
@@ -695,46 +819,38 @@ def api_mobile_money_checkout():
     })
 
 
-@app.route("/api/reviews", methods=["POST"])
-@jwt_required()
-def api_post_review():
+# DEPRECATED: Phase 8 replaces /api/reviews POST with submit_review() below.
+# This function is renamed to avoid Flask duplicate endpoint error.
+# The new endpoint at the bottom of this file handles /api/reviews POST fully.
+def _legacy_api_post_review():
+    """Legacy review submission — replaced by Phase 8 submit_review()."""
     data = request.get_json()
     user_id = int(get_jwt_identity())
-    
     item_type = data.get("item_type")
-    item_id = data.get("item_id")
-    rating = int(data.get("rating", 5))
-    comment = data.get("comment", "")
-    
+    item_id   = data.get("item_id")
+    rating    = int(data.get("rating", 5))
+    comment   = data.get("comment", "")
     if not item_type or not item_id:
         return jsonify({"error": "Missing item info"}), 400
-        
     if not 1 <= rating <= 5:
         return jsonify({"error": "Rating must be between 1 and 5"}), 400
-        
     try:
         review = Review(
-            user_id=user_id,
-            item_type=item_type,
-            item_id=item_id,
-            rating=rating,
-            comment=comment
+            tourist_id=user_id, user_id=user_id,
+            item_type=item_type, item_id=str(item_id),
+            rating=rating, comment=comment
         )
         db.session.add(review)
         db.session.commit()
-        
-        # Optionally update the parent aggregate rating
         if item_type == "guide":
             guide = db.session.get(Guide, item_id)
             if guide:
                 total_r = guide.total_reviews or 0
                 current_rt = guide.rating or 0.0
                 new_total = total_r + 1
-                new_rating = ((current_rt * total_r) + rating) / new_total
-                guide.rating = round(new_rating, 1)
+                guide.rating = round(((current_rt * total_r) + rating) / new_total, 1)
                 guide.total_reviews = new_total
                 db.session.commit()
-                
         return jsonify({"message": "Review submitted successfully"}), 201
     except Exception as e:
         db.session.rollback()
@@ -1289,6 +1405,22 @@ def cancel_booking(booking_id):
     booking.status = 'cancelled'
     db.session.commit()
 
+    # Phase 8: notify guide of cancellation
+    try:
+        if booking.item_type == 'guide':
+            guide_user = User.query.filter_by(id=booking.item_id).first() or \
+                         User.query.join(Guide, Guide.user_id == User.id)\
+                               .filter(Guide.id == booking.item_id).first()
+            if guide_user:
+                notify(
+                    user_id=guide_user.id,
+                    notif_type="booking_cancelled",
+                    title="Booking Cancelled",
+                    message=f"A tourist cancelled their booking for {booking.scheduled_date.strftime('%b %d, %Y') if booking.scheduled_date else 'an upcoming date'}.",
+                    link="/dashboard/bookings",
+                )
+    except Exception: pass
+
     # Send cancellation email (best-effort)
     tourist = db.session.get(User, current_user_id)
     if tourist:
@@ -1517,6 +1649,26 @@ def payment_callback():
     booking.tx_id  = str(trans_id)
     db.session.commit()
 
+    # Phase 8: initiate escrow + send booking confirmed notification
+    try:
+        if booking.item_type == 'guide':
+            guide_obj  = db.session.get(Guide, booking.item_id)
+            guide_user = User.query.get(guide_obj.user_id) if guide_obj else None
+            guide_sub  = getattr(guide_user, 'flw_sub_account_id', None) if guide_user else None
+            initiate_escrow(booking, guide_sub)
+    except Exception as _esc_err:
+        app.logger.error(f'[ESCROW] Initiation failed for booking #{booking.id}: {_esc_err}')
+
+    try:
+        tourist_obj  = db.session.get(User, booking.user_id)
+        guide_notify = None
+        if booking.item_type == 'guide':
+            _g = db.session.get(Guide, booking.item_id)
+            guide_notify = User.query.get(_g.user_id) if _g else None
+        notify_booking_confirmed(booking, guide_notify)
+    except Exception as _n_err:
+        app.logger.error(f'[NOTIFY] Booking confirmed notification failed: {_n_err}')
+
     # Send receipt email (best-effort)
     tourist = db.session.get(User, booking.user_id)
     if tourist:
@@ -1568,3 +1720,897 @@ def payment_cancel_page():
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5050)
+
+
+# =============================================================================
+# PHASE 8 ROUTES
+# =============================================================================
+
+# ──────────────────────────────────────────────────────────────────────
+# DAY 2 — Host Dashboard, Availability, Reviews, Notifications
+# ──────────────────────────────────────────────────────────────────────
+
+@app.route("/host/dashboard")
+@jwt_required()
+def host_dashboard():
+    """Main dashboard for accommodation hosts and experience providers. Feature #58."""
+    current_user_id = get_jwt_identity()
+    host = User.query.get_or_404(current_user_id)
+
+    if host.role not in ("host", "operator", "admin"):
+        return redirect(url_for("index"))
+
+    # BUG FIX: Use Accommodation (not Stay), check for host_id attribute
+    my_stay_ids = []
+    if hasattr(Accommodation, "host_id"):
+        my_stay_ids = [s.id for s in Accommodation.query.filter_by(host_id=int(current_user_id)).all()]
+
+    my_experience_ids = []
+    if hasattr(Experience, "host_id"):
+        my_experience_ids = [e.id for e in Experience.query.filter_by(host_id=int(current_user_id)).all()]
+
+    bookings = Booking.query
+    if my_stay_ids or my_experience_ids:
+        bookings = bookings.filter(
+            db.or_(
+                db.and_(Booking.item_type == "accommodation", Booking.item_id.in_([str(x) for x in my_stay_ids])),
+                db.and_(Booking.item_type == "experience",    Booking.item_id.in_([str(x) for x in my_experience_ids])),
+            )
+        )
+    bookings = bookings.order_by(Booking.created_at.desc()).all()
+
+    total_bookings = len(bookings)
+    confirmed      = sum(1 for b in bookings if b.status == "confirmed")
+    total_revenue  = sum(b.amount for b in bookings if b.status == "confirmed")
+    pending_count  = sum(1 for b in bookings if b.status == "pending")
+
+    reviews = []
+    if my_stay_ids or my_experience_ids:
+        reviews = Review.query.filter(
+            db.or_(
+                db.and_(Review.item_type == "accommodation", Review.item_id.in_([str(x) for x in my_stay_ids])),
+                db.and_(Review.item_type == "experience",    Review.item_id.in_([str(x) for x in my_experience_ids])),
+            )
+        ).order_by(Review.created_at.desc()).limit(10).all()
+
+    unread_notifications = Notification.query.filter_by(
+        user_id=current_user_id, is_read=False
+    ).count()
+
+    return render_template(
+        "host_dashboard.html",
+        host=host,
+        bookings=bookings,
+        stats={
+            "total_bookings": total_bookings,
+            "confirmed":      confirmed,
+            "pending":        pending_count,
+            "total_revenue":  total_revenue,
+        },
+        recent_reviews=reviews,
+        unread_notifications=unread_notifications,
+    )
+
+
+@app.route("/host/edit-profile", methods=["GET", "POST"])
+@jwt_required()
+def host_edit_profile():
+    """Allow hosts to update their bio, listing details, and contact info."""
+    current_user_id = get_jwt_identity()
+    host = User.query.get_or_404(current_user_id)
+
+    if request.method == "POST":
+        data = request.get_json() or request.form
+        host.bio          = data.get("bio", getattr(host, 'bio', ''))
+        host.booking_type = data.get("booking_type", host.booking_type)
+        db.session.commit()
+        return jsonify({"status": "success", "message": "Profile updated."})
+
+    return render_template("host_edit_profile.html", host=host)
+
+
+# ── Phase 8 — Guide Availability Calendar — Feature #59 ──────────────────────
+
+@app.route("/api/availability/<int:guide_id>", methods=["GET"])
+def get_availability(guide_id):
+    """Returns list of blocked dates for a guide. Called by booking.html."""
+    blocked = Availability.query.filter_by(guide_id=guide_id).all()
+    return jsonify({
+        "status":        "success",
+        "blocked_dates": [str(a.date) for a in blocked],
+    })
+
+
+@app.route("/api/availability", methods=["POST"])
+@jwt_required()
+def block_date():
+    """Guide blocks a date on their calendar. Body: { date, reason }"""
+    current_user_id = int(get_jwt_identity())
+    guide = User.query.get_or_404(current_user_id)
+
+    if guide.role not in ("guide", "admin"):
+        return jsonify({"status": "error", "message": "Not authorised"}), 403
+
+    data     = request.get_json()
+    date_str = data.get("date")
+    reason   = data.get("reason", "")
+
+    if not date_str:
+        return jsonify({"status": "error", "message": "date is required"}), 400
+
+    try:
+        from datetime import date as date_type
+        block_date_obj = date_type.fromisoformat(date_str)
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid date format. Use YYYY-MM-DD"}), 400
+
+    existing = Availability.query.filter_by(guide_id=current_user_id, date=block_date_obj).first()
+    if existing:
+        return jsonify({"status": "success", "message": "Date already blocked.", "id": existing.id})
+
+    avail = Availability(guide_id=current_user_id, date=block_date_obj, reason=reason)
+    db.session.add(avail)
+    db.session.commit()
+    return jsonify({"status": "success", "message": "Date blocked.", "id": avail.id})
+
+
+@app.route("/api/availability/<int:availability_id>", methods=["DELETE"])
+@jwt_required()
+def unblock_date(availability_id):
+    """Guide unblocks a previously blocked date."""
+    current_user_id = int(get_jwt_identity())
+    avail = Availability.query.filter_by(id=availability_id, guide_id=current_user_id).first()
+    if not avail:
+        return jsonify({"status": "error", "message": "Blocked date not found"}), 404
+    db.session.delete(avail)
+    db.session.commit()
+    return jsonify({"status": "success", "message": "Date unblocked."})
+
+
+@app.route("/dashboard/availability")
+@jwt_required()
+def guide_availability_page():
+    """Renders the guide's availability calendar management page."""
+    current_user_id = int(get_jwt_identity())
+    guide = User.query.get_or_404(current_user_id)
+    blocked = Availability.query.filter_by(guide_id=current_user_id)\
+                                .order_by(Availability.date).all()
+    return render_template("guide_availability.html", guide=guide, blocked_dates=blocked)
+
+
+# ── Phase 8 — Rating & Review System — Feature #82 ───────────────────────
+
+@app.route("/api/reviews", methods=["POST"])
+@jwt_required()
+def submit_review():
+    """
+    Tourist submits a review for a completed booking. (Phase 8 version)
+    Replaces the original /api/reviews POST.
+    """
+    current_user_id = int(get_jwt_identity())
+    data = request.get_json()
+
+    booking_id = data.get("booking_id")
+    rating     = data.get("rating")
+    comment    = data.get("comment", "").strip()
+
+    if not booking_id or rating is None:
+        return jsonify({"status": "error", "message": "booking_id and rating are required"}), 400
+
+    try:
+        rating = int(rating)
+        if not 1 <= rating <= 5:
+            raise ValueError
+    except (ValueError, TypeError):
+        return jsonify({"status": "error", "message": "Rating must be an integer between 1 and 5"}), 400
+
+    # BUG FIX: use user_id (actual column) not tourist_id (property alias)
+    booking = Booking.query.filter_by(id=booking_id, user_id=current_user_id).first()
+    if not booking:
+        return jsonify({"status": "error", "message": "Booking not found"}), 404
+
+    if booking.status != "confirmed":
+        return jsonify({"status": "error", "message": "You can only review confirmed bookings"}), 400
+
+    existing = Review.query.filter_by(booking_id=booking_id).first()
+    if existing:
+        return jsonify({"status": "error", "message": "You have already reviewed this booking"}), 409
+
+    review = Review(
+        tourist_id = current_user_id,
+        user_id    = current_user_id,
+        booking_id = booking_id,
+        item_type  = booking.item_type,
+        item_id    = str(booking.item_id),
+        rating     = rating,
+        comment    = comment if comment else None,
+    )
+    db.session.add(review)
+    db.session.commit()
+
+    # Notify guide/host of new review
+    try:
+        if booking.item_type == "guide":
+            guide_obj  = db.session.get(Guide, booking.item_id)
+            guide_user = User.query.get(guide_obj.user_id) if guide_obj else None
+            if guide_user:
+                notify_review_received(review, guide_user)
+    except Exception as e:
+        app.logger.error(f"[REVIEW] Notification failed: {e}")
+
+    return jsonify({"status": "success", "message": "Review submitted.", "review": review.to_dict()}), 201
+
+
+@app.route("/api/reviews/<string:item_type>/<string:item_id>", methods=["GET"])
+def get_reviews(item_type, item_id):
+    """Get all visible reviews for a guide, stay, or experience."""
+    if item_type not in ("guide", "accommodation", "experience"):
+        return jsonify({"status": "error", "message": "Invalid item type"}), 400
+
+    reviews = Review.query.filter_by(
+        item_type=item_type,
+        item_id=str(item_id),
+        is_visible=True,
+    ).order_by(Review.created_at.desc()).all()
+
+    avg_rating = (
+        sum(r.rating for r in reviews) / len(reviews) if reviews else 0
+    )
+
+    return jsonify({
+        "status":     "success",
+        "count":      len(reviews),
+        "avg_rating": round(avg_rating, 1),
+        "reviews":    [r.to_dict() for r in reviews],
+    })
+
+
+@app.route("/api/admin/reviews/<int:review_id>/hide", methods=["POST"])
+@jwt_required()
+def admin_hide_review(review_id):
+    """Admin hides an abusive review."""
+    current_user_id = int(get_jwt_identity())
+    admin = User.query.get_or_404(current_user_id)
+    if not admin.is_admin:
+        return jsonify({"status": "error", "message": "Forbidden"}), 403
+
+    review = Review.query.get_or_404(review_id)
+    review.is_visible = False
+    db.session.commit()
+    return jsonify({"status": "success", "message": "Review hidden."})
+
+
+# ── Phase 8 — In-App Notification Center — Feature #80 ──────────────────
+
+@app.route("/api/notifications", methods=["GET"])
+@jwt_required()
+def get_notifications():
+    """Returns the current user's notifications, newest first."""
+    current_user_id = int(get_jwt_identity())
+    unread_only = request.args.get("unread_only", "false").lower() == "true"
+    limit       = min(int(request.args.get("limit", 20)), 50)
+
+    q = Notification.query.filter_by(user_id=current_user_id)
+    if unread_only:
+        q = q.filter_by(is_read=False)
+
+    notifications = q.order_by(Notification.created_at.desc()).limit(limit).all()
+    unread_count  = Notification.query.filter_by(user_id=current_user_id, is_read=False).count()
+
+    return jsonify({
+        "status":        "success",
+        "unread_count":  unread_count,
+        "notifications": [n.to_dict() for n in notifications],
+    })
+
+
+@app.route("/api/notifications/<int:notif_id>/read", methods=["POST"])
+@jwt_required()
+def mark_notification_read(notif_id):
+    """Mark a single notification as read."""
+    current_user_id = int(get_jwt_identity())
+    notif = Notification.query.filter_by(id=notif_id, user_id=current_user_id).first()
+    if not notif:
+        return jsonify({"status": "error", "message": "Notification not found"}), 404
+    notif.is_read = True
+    db.session.commit()
+    return jsonify({"status": "success"})
+
+
+@app.route("/api/notifications/read-all", methods=["POST"])
+@jwt_required()
+def mark_all_notifications_read():
+    """Mark all of the current user's notifications as read."""
+    current_user_id = int(get_jwt_identity())
+    Notification.query.filter_by(user_id=current_user_id, is_read=False)\
+                      .update({"is_read": True})
+    db.session.commit()
+    return jsonify({"status": "success", "message": "All notifications marked as read."})
+
+
+@app.route("/notifications")
+@jwt_required()
+def notification_center():
+    """Renders the full notification inbox page."""
+    current_user_id = int(get_jwt_identity())
+    notifications   = Notification.query.filter_by(user_id=current_user_id)\
+                                        .order_by(Notification.created_at.desc())\
+                                        .limit(50).all()
+    for n in notifications:
+        n.is_read = True
+    db.session.commit()
+    return render_template("notification_center.html", notifications=notifications)
+
+
+@app.route("/api/notifications/register-token", methods=["POST"])
+@jwt_required()
+def register_fcm_token():
+    """Register a device FCM token for push notifications."""
+    from models import UserFCMToken
+    current_user_id = int(get_jwt_identity())
+    data     = request.get_json()
+    token    = data.get("token")
+    platform = data.get("platform", "web")
+
+    if not token:
+        return jsonify({"status": "error", "message": "token is required"}), 400
+
+    try:
+        existing = UserFCMToken.query.filter_by(user_id=current_user_id, token=token).first()
+        if not existing:
+            fcm_token = UserFCMToken(user_id=current_user_id, token=token, platform=platform)
+            db.session.add(fcm_token)
+            db.session.commit()
+        return jsonify({"status": "success"})
+    except Exception as e:
+        app.logger.error(f"[FCM] Token registration failed: {e}")
+        return jsonify({"status": "success"})  # Silent fail
+
+
+# =============================================================================
+# DAY 3 — Escrow, Pricing, Commission
+# =============================================================================
+
+@app.route("/api/escrow/status/<int:booking_id>", methods=["GET"])
+@jwt_required()
+def get_escrow_status(booking_id):
+    """Returns current escrow status for a booking."""
+    current_user_id = int(get_jwt_identity())
+    # BUG FIX: use user_id column directly
+    booking = Booking.query.filter_by(id=booking_id, user_id=current_user_id).first()
+    if not booking:
+        return jsonify({"status": "error", "message": "Booking not found"}), 404
+
+    escrow = EscrowTransaction.query.filter_by(booking_id=booking_id).first()
+    if not escrow:
+        return jsonify({"status": "success", "escrow": None})
+    return jsonify({"status": "success", "escrow": escrow.to_dict()})
+
+
+@app.route("/api/escrow/settle/<int:booking_id>", methods=["POST"])
+@jwt_required()
+def settle_escrow_route(booking_id):
+    """Tourist taps 'Tour Completed' — triggers escrow settlement."""
+    current_user_id = int(get_jwt_identity())
+    booking = Booking.query.filter_by(id=booking_id, user_id=current_user_id).first()
+
+    if not booking:
+        return jsonify({"status": "error", "message": "Booking not found"}), 404
+    if booking.status != "confirmed":
+        return jsonify({"status": "error", "message": "Booking is not in a confirmed state"}), 400
+
+    escrow = EscrowTransaction.query.filter_by(booking_id=booking_id).first()
+    if not escrow:
+        return jsonify({"status": "error", "message": "No escrow found for this booking"}), 404
+    if escrow.status != "holding":
+        return jsonify({"status": "error", "message": f"Escrow is already {escrow.status}."}), 400
+
+    guide_sub_account = None
+    if booking.item_type == "guide":
+        guide_obj  = db.session.get(Guide, booking.item_id)
+        guide_user = User.query.get(guide_obj.user_id) if guide_obj else None
+        guide_sub_account = getattr(guide_user, "flw_sub_account_id", None) if guide_user else None
+
+    result = settle_escrow(escrow, guide_sub_account)
+
+    if result["status"] == "success":
+        return jsonify({
+            "status":  "success",
+            "message": "Tour confirmed. Payment has been released to your guide.",
+            "settlement": {
+                "gross":       result["gross_amount"],
+                "commission":  result["commission"],
+                "net_to_guide":result["net_to_operator"],
+                "currency":    result["currency"],
+            },
+        })
+    else:
+        app.logger.error(f"[ESCROW] Settlement failed for booking #{booking_id}: {result}")
+        return jsonify({"status": "error", "message": "Settlement processing error. Our team has been notified."}), 500
+
+
+@app.route("/escrow/confirm/<int:booking_id>")
+@jwt_required()
+def escrow_confirm_page(booking_id):
+    """Tour completion confirmation page."""
+    current_user_id = int(get_jwt_identity())
+    booking = Booking.query.filter_by(id=booking_id, user_id=current_user_id).first_or_404()
+    escrow  = EscrowTransaction.query.filter_by(booking_id=booking_id).first()
+
+    commission_rate = app.config.get("COMMISSION_RATE", 0.10)
+    net_to_guide = round(escrow.escrow_amount * (1 - commission_rate), 2) if escrow else None
+
+    return render_template(
+        "escrow_confirm.html",
+        booking=booking,
+        escrow=escrow,
+        net_to_guide=net_to_guide,
+        commission_pct=int(commission_rate * 100),
+    )
+
+
+# ── Phase 8 — Dynamic Pricing Engine — Feature #52 ─────────────────────────
+
+@app.route("/dashboard/pricing")
+@jwt_required()
+def pricing_dashboard():
+    """Guide/Host views and manages their dynamic pricing rules."""
+    current_user_id = int(get_jwt_identity())
+    operator = User.query.get_or_404(current_user_id)
+    rules = PricingRule.query.filter_by(operator_id=current_user_id).all()
+    return render_template("guide_pricing.html", operator=operator, rules=rules)
+
+
+@app.route("/api/pricing/rules", methods=["GET"])
+@jwt_required()
+def get_pricing_rules():
+    """Returns all pricing rules for the current operator."""
+    current_user_id = int(get_jwt_identity())
+    rules = PricingRule.query.filter_by(operator_id=current_user_id).all()
+    return jsonify({"status": "success", "rules": [r.to_dict() for r in rules]})
+
+
+@app.route("/api/pricing/rules", methods=["POST"])
+@jwt_required()
+def create_pricing_rule():
+    """Create or update a pricing rule for a listing."""
+    current_user_id = int(get_jwt_identity())
+    data = request.get_json()
+    item_type = data.get("item_type")
+    item_id   = data.get("item_id")
+
+    if not item_type or not item_id:
+        return jsonify({"status": "error", "message": "item_type and item_id are required"}), 400
+
+    for field in ("low_load_multiplier", "high_load_multiplier", "last_minute_multiplier"):
+        val = data.get(field)
+        if val is not None and not (0.5 <= float(val) <= 3.0):
+            return jsonify({"status": "error", "message": f"{field} must be between 0.5 and 3.0"}), 400
+
+    rule = PricingRule.query.filter_by(
+        operator_id=current_user_id, item_type=item_type, item_id=item_id
+    ).first()
+
+    if not rule:
+        rule = PricingRule(operator_id=current_user_id, item_type=item_type, item_id=item_id)
+        db.session.add(rule)
+
+    rule.low_load_threshold     = float(data.get("low_load_threshold",     rule.low_load_threshold or 25.0))
+    rule.low_load_multiplier    = float(data.get("low_load_multiplier",     rule.low_load_multiplier or 0.85))
+    rule.high_load_threshold    = float(data.get("high_load_threshold",    rule.high_load_threshold or 75.0))
+    rule.high_load_multiplier   = float(data.get("high_load_multiplier",   rule.high_load_multiplier or 1.20))
+    rule.last_minute_hours      = int(data.get("last_minute_hours",        rule.last_minute_hours or 48))
+    rule.last_minute_multiplier = float(data.get("last_minute_multiplier", rule.last_minute_multiplier or 0.90))
+    rule.max_capacity           = int(data.get("max_capacity",             rule.max_capacity or 10))
+    rule.is_active              = bool(data.get("is_active", True))
+    db.session.commit()
+    return jsonify({"status": "success", "message": "Pricing rule saved.", "rule": rule.to_dict()})
+
+
+@app.route("/api/pricing/rules/<int:rule_id>", methods=["DELETE"])
+@jwt_required()
+def delete_pricing_rule(rule_id):
+    """Delete a pricing rule (operator only)."""
+    current_user_id = int(get_jwt_identity())
+    rule = PricingRule.query.filter_by(id=rule_id, operator_id=current_user_id).first()
+    if not rule:
+        return jsonify({"status": "error", "message": "Rule not found"}), 404
+    db.session.delete(rule)
+    db.session.commit()
+    return jsonify({"status": "success", "message": "Pricing rule deleted."})
+
+
+@app.route("/api/pricing/compute", methods=["POST"])
+def compute_price():
+    """Public endpoint — returns the dynamic price for a listing."""
+    data           = request.get_json()
+    item_type      = data.get("item_type")
+    item_id        = data.get("item_id")
+    base_price     = float(data.get("base_price", 0))
+    scheduled_date = data.get("scheduled_date")
+
+    if not all([item_type, item_id, base_price]):
+        return jsonify({"status": "error", "message": "item_type, item_id, and base_price are required"}), 400
+
+    if scheduled_date:
+        from datetime import date
+        try:
+            scheduled_date = date.fromisoformat(scheduled_date)
+        except ValueError:
+            scheduled_date = None
+
+    result = compute_dynamic_price(base_price, item_type, int(item_id), scheduled_date)
+    return jsonify({"status": "success", **result})
+
+
+# ── Phase 8 — Commission Ledger — Feature #53 ─────────────────────────────
+
+@app.route("/api/admin/commission", methods=["GET"])
+@jwt_required()
+def get_commission_ledger():
+    """Admin view of all commission extractions."""
+    current_user_id = int(get_jwt_identity())
+    admin = User.query.get_or_404(current_user_id)
+    if not admin.is_admin:
+        return jsonify({"status": "error", "message": "Forbidden"}), 403
+
+    limit  = min(int(request.args.get("limit", 50)), 200)
+    offset = int(request.args.get("offset", 0))
+
+    records          = CommissionLedger.query.order_by(CommissionLedger.extracted_at.desc())\
+                                             .limit(limit).offset(offset).all()
+    total            = CommissionLedger.query.count()
+    total_commission = db.session.query(db.func.sum(CommissionLedger.commission_amount)).scalar() or 0
+
+    return jsonify({
+        "status":           "success",
+        "total_records":    total,
+        "total_commission": round(total_commission, 2),
+        "records":          [r.to_dict() for r in records],
+    })
+
+
+# =============================================================================
+# DAY 4 — KYC, Video Intros, Booking Type
+# =============================================================================
+
+@app.route("/dashboard/kyc")
+@jwt_required()
+def kyc_page():
+    """Guide KYC submission page."""
+    current_user_id = int(get_jwt_identity())
+    guide  = User.query.get_or_404(current_user_id)
+    status = get_kyc_status(current_user_id)
+    return render_template("kyc_submit.html", guide=guide, kyc=status)
+
+
+@app.route("/api/kyc/submit", methods=["POST"])
+@jwt_required()
+def submit_kyc_route():
+    """Guide submits identity verification documents."""
+    current_user_id = int(get_jwt_identity())
+    guide = User.query.get_or_404(current_user_id)
+
+    if guide.role not in ("guide", "operator"):
+        return jsonify({"status": "error", "message": "KYC is for guides and operators only"}), 403
+
+    id_type   = request.form.get("id_type", "NATIONAL_ID")
+    id_number = request.form.get("id_number", "")
+    country   = request.form.get("country", "TZ")
+
+    if not id_number:
+        return jsonify({"status": "error", "message": "id_number is required"}), 400
+
+    import base64
+    selfie_b64 = None
+    id_b64     = None
+
+    if "selfie_image" in request.files:
+        selfie_file = request.files["selfie_image"]
+        if selfie_file.filename:
+            selfie_b64 = base64.b64encode(selfie_file.read()).decode("utf-8")
+
+    if "id_image" in request.files:
+        id_file = request.files["id_image"]
+        if id_file.filename:
+            id_b64 = base64.b64encode(id_file.read()).decode("utf-8")
+
+    result = submit_kyc(
+        guide_id            = current_user_id,
+        id_type             = id_type,
+        id_number           = id_number,
+        country             = country,
+        selfie_image_base64 = selfie_b64,
+        id_image_base64     = id_b64,
+    )
+
+    try:
+        admin_users = User.query.filter_by(is_admin=True).all()
+        for admin in admin_users:
+            notify(
+                user_id    = admin.id,
+                notif_type = "general",
+                title      = "New KYC Submission",
+                message    = f"Guide #{current_user_id} ({guide.username}) submitted KYC ({id_type}).",
+                link       = f"/admin/kyc/{current_user_id}",
+            )
+    except Exception as e:
+        app.logger.error(f"[KYC] Admin notification failed: {e}")
+
+    if result.get("async_mode"):
+        return jsonify({"status": "success",
+                        "message": "Your documents have been submitted for review. We'll notify you of the result.",
+                        "verify_url": result.get("verify_url")})
+
+    if result.get("success"):
+        kyc_status = get_kyc_status(current_user_id)
+        return jsonify({"status": "success", "message": "Verification submitted.", "kyc_status": kyc_status.get("status")})
+
+    return jsonify({"status": "error", "message": "Verification could not be completed. Please try again."}), 422
+
+
+@app.route("/api/kyc/sumsub-webhook", methods=["POST"])
+def sumsub_webhook():
+    """Receives async verification results from Sumsub."""
+    payload = request.get_json()
+    success = process_sumsub_webhook(payload)
+    return jsonify({"status": "success" if success else "error"}), 200
+
+
+@app.route("/admin/kyc")
+@jwt_required()
+def admin_kyc_list():
+    """Admin views all pending KYC submissions."""
+    current_user_id = int(get_jwt_identity())
+    admin = User.query.get_or_404(current_user_id)
+    if not admin.is_admin:
+        return redirect(url_for("index"))
+
+    pending  = KYCRecord.query.filter_by(status="pending").order_by(KYCRecord.submitted_at.desc()).all()
+    flagged  = KYCRecord.query.filter_by(status="flagged").order_by(KYCRecord.submitted_at.desc()).all()
+    approved = KYCRecord.query.filter_by(status="approved").order_by(KYCRecord.reviewed_at.desc()).limit(20).all()
+    rejected = KYCRecord.query.filter_by(status="rejected").order_by(KYCRecord.reviewed_at.desc()).limit(10).all()
+
+    return render_template("admin_kyc.html", pending=pending, flagged=flagged,
+                           approved=approved, rejected=rejected)
+
+
+@app.route("/api/admin/kyc/<int:guide_id>/approve", methods=["POST"])
+@jwt_required()
+def admin_approve_kyc(guide_id):
+    """Admin approves a guide's KYC submission."""
+    from services.notification_service import notify_kyc_result
+    current_user_id = int(get_jwt_identity())
+    admin = User.query.get_or_404(current_user_id)
+    if not admin.is_admin:
+        return jsonify({"status": "error", "message": "Forbidden"}), 403
+
+    record = KYCRecord.query.filter_by(guide_id=guide_id).first()
+    if not record:
+        return jsonify({"status": "error", "message": "KYC record not found"}), 404
+
+    record.status      = "approved"
+    record.reviewed_at = datetime.utcnow()
+    notes_data = request.get_json() or {}
+    record.admin_notes = notes_data.get("notes", "")
+
+    guide = User.query.get(guide_id)
+    if guide:
+        guide.is_verified = True
+        video = GuideVideo.query.filter_by(guide_id=guide_id, status="pending").first()
+        if video:
+            video.status = "approved"
+            video.approved_at = datetime.utcnow()
+
+    db.session.commit()
+
+    if guide:
+        notify_kyc_result(guide, approved=True)
+
+    return jsonify({"status": "success", "message": f"KYC approved for guide #{guide_id}."})
+
+
+@app.route("/api/admin/kyc/<int:guide_id>/reject", methods=["POST"])
+@jwt_required()
+def admin_reject_kyc(guide_id):
+    """Admin rejects a guide's KYC submission."""
+    from services.notification_service import notify_kyc_result
+    current_user_id = int(get_jwt_identity())
+    admin = User.query.get_or_404(current_user_id)
+    if not admin.is_admin:
+        return jsonify({"status": "error", "message": "Forbidden"}), 403
+
+    data   = request.get_json() or {}
+    reason = data.get("reason", "Documents could not be verified.")
+
+    record = KYCRecord.query.filter_by(guide_id=guide_id).first()
+    if not record:
+        return jsonify({"status": "error", "message": "KYC record not found"}), 404
+
+    record.status      = "rejected"
+    record.reviewed_at = datetime.utcnow()
+    record.admin_notes = reason
+    db.session.commit()
+
+    guide = User.query.get(guide_id)
+    if guide:
+        notify_kyc_result(guide, approved=False, reason=reason)
+
+    return jsonify({"status": "success", "message": f"KYC rejected for guide #{guide_id}."})
+
+
+# ── Phase 8 — Guide Video Introductions — Feature #60 ─────────────────────
+
+@app.route("/api/guide/video", methods=["POST"])
+@jwt_required()
+def upload_guide_video():
+    """Guide uploads a 60-second video introduction."""
+    current_user_id = int(get_jwt_identity())
+    guide = User.query.get_or_404(current_user_id)
+
+    if "video" not in request.files:
+        return jsonify({"status": "error", "message": "No video file provided"}), 400
+
+    video_file = request.files["video"]
+    if not video_file.filename:
+        return jsonify({"status": "error", "message": "Empty file"}), 400
+
+    allowed_mimes = {"video/mp4", "video/quicktime", "video/webm"}
+    if video_file.mimetype not in allowed_mimes:
+        return jsonify({"status": "error", "message": "Only MP4, MOV, and WebM videos are accepted"}), 400
+
+    try:
+        upload_result = cloudinary.uploader.upload(
+            video_file,
+            resource_type  = "video",
+            folder         = f"safaraone/guide_intros/{current_user_id}",
+            public_id      = f"guide_{current_user_id}_intro",
+            overwrite      = True,
+            transformation = [{"duration": 60}, {"quality": "auto"}, {"fetch_format": "auto"}],
+            eager          = [{"format": "jpg", "transformation": [{"start_offset": "2"}]}],
+            eager_async    = True,
+        )
+    except Exception as e:
+        app.logger.error(f"[VIDEO] Cloudinary upload failed for guide #{current_user_id}: {e}")
+        return jsonify({"status": "error", "message": "Video upload failed. Please try again."}), 500
+
+    kyc_status   = get_kyc_status(current_user_id)
+    auto_approve = kyc_status.get("status") == "approved"
+
+    video = GuideVideo.query.filter_by(guide_id=current_user_id).first()
+    if not video:
+        video = GuideVideo(guide_id=current_user_id)
+        db.session.add(video)
+
+    video.cloudinary_public_id = upload_result.get("public_id", "")
+    video.cloudinary_url       = upload_result.get("secure_url", "")
+    video.duration_seconds     = int(upload_result.get("duration", 0) or 0)
+    video.status               = "approved" if auto_approve else "pending"
+    video.approved_at          = datetime.utcnow() if auto_approve else None
+    video.rejection_reason     = None
+
+    eager = upload_result.get("eager", [])
+    if eager:
+        video.cloudinary_thumbnail = eager[0].get("secure_url")
+
+    db.session.commit()
+    return jsonify({
+        "status":       "success",
+        "message":      "Video uploaded successfully." if auto_approve else "Video uploaded and pending admin review.",
+        "video_url":    video.cloudinary_url,
+        "thumbnail":    video.cloudinary_thumbnail,
+        "video_status": video.status,
+    })
+
+
+@app.route("/api/guide/video", methods=["DELETE"])
+@jwt_required()
+def delete_guide_video():
+    """Guide removes their video introduction."""
+    current_user_id = int(get_jwt_identity())
+    video = GuideVideo.query.filter_by(guide_id=current_user_id).first()
+    if not video:
+        return jsonify({"status": "error", "message": "No video found"}), 404
+
+    try:
+        cloudinary.uploader.destroy(video.cloudinary_public_id, resource_type="video")
+    except Exception as e:
+        app.logger.warning(f"[VIDEO] Cloudinary delete failed (continuing): {e}")
+
+    db.session.delete(video)
+    db.session.commit()
+    return jsonify({"status": "success", "message": "Video removed."})
+
+
+@app.route("/api/admin/videos/<int:guide_id>/approve", methods=["POST"])
+@jwt_required()
+def admin_approve_video(guide_id):
+    """Admin approves a guide's video intro."""
+    current_user_id = int(get_jwt_identity())
+    admin = User.query.get_or_404(current_user_id)
+    if not admin.is_admin:
+        return jsonify({"status": "error", "message": "Forbidden"}), 403
+
+    video = GuideVideo.query.filter_by(guide_id=guide_id).first()
+    if not video:
+        return jsonify({"status": "error", "message": "Video not found"}), 404
+
+    video.status      = "approved"
+    video.approved_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({"status": "success"})
+
+
+@app.route("/api/admin/videos/<int:guide_id>/reject", methods=["POST"])
+@jwt_required()
+def admin_reject_video(guide_id):
+    """Admin rejects a guide's video intro."""
+    current_user_id = int(get_jwt_identity())
+    admin = User.query.get_or_404(current_user_id)
+    if not admin.is_admin:
+        return jsonify({"status": "error", "message": "Forbidden"}), 403
+
+    data   = request.get_json() or {}
+    reason = data.get("reason", "Video does not meet our content guidelines.")
+
+    video = GuideVideo.query.filter_by(guide_id=guide_id).first()
+    if not video:
+        return jsonify({"status": "error", "message": "Video not found"}), 404
+
+    video.status           = "rejected"
+    video.rejection_reason = reason
+    db.session.commit()
+
+    guide = User.query.get(guide_id)
+    if guide:
+        notify(
+            user_id    = guide.id,
+            notif_type = "general",
+            title      = "Video Introduction Rejected",
+            message    = f"Your intro video was not approved. Reason: {reason}",
+            link       = "/dashboard",
+        )
+    return jsonify({"status": "success"})
+
+
+# ── Phase 8 — Instant vs Request Booking Indicators — Feature #35 ─────────
+
+@app.route("/api/guide/<int:guide_id>/booking-type", methods=["GET"])
+def get_guide_booking_type(guide_id):
+    """Returns whether a guide offers instant confirmation or requires approval."""
+    guide_user = User.query.get(guide_id)
+    if not guide_user:
+        # Try looking up by Guide.id → User
+        guide_obj  = db.session.get(Guide, str(guide_id))
+        guide_user = User.query.get(guide_obj.user_id) if guide_obj else None
+    if not guide_user:
+        return jsonify({"status": "error", "message": "Guide not found"}), 404
+
+    booking_type = getattr(guide_user, "booking_type", "request") or "request"
+    return jsonify({
+        "status":       "success",
+        "booking_type": booking_type,
+        "label":        "Instant Confirmation" if booking_type == "instant" else "Awaiting Approval (24hr)",
+        "description":  (
+            "Your booking will be confirmed immediately after payment."
+            if booking_type == "instant"
+            else "The guide will review your request and confirm within 24 hours of payment."
+        ),
+    })
+
+
+@app.route("/api/guide/booking-type", methods=["POST"])
+@jwt_required()
+def set_guide_booking_type():
+    """Guide sets their booking confirmation type."""
+    current_user_id = int(get_jwt_identity())
+    guide = User.query.get_or_404(current_user_id)
+    data  = request.get_json() or {}
+    btype = data.get("booking_type", "request")
+
+    if btype not in ("instant", "request"):
+        return jsonify({"status": "error", "message": "booking_type must be 'instant' or 'request'"}), 400
+
+    guide.booking_type = btype
+    db.session.commit()
+    return jsonify({"status": "success", "booking_type": btype})

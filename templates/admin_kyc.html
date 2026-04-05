@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Admin — KYC Review — SafaraOne{% endblock %}
+
+{% block content %}
+<section style="padding:80px 24px; min-height:80vh;">
+  <div style="max-width:1100px; margin:0 auto;">
+    <h1 style="font-size:2rem; font-weight:800; color:var(--amber); margin-bottom:8px;">🪪 KYC Review Panel</h1>
+    <p style="color:var(--text-secondary); margin-bottom:40px;">Review and approve guide identity verifications.</p>
+
+    <!-- Pending -->
+    <h2 style="font-size:1.2rem; font-weight:700; margin-bottom:16px;">
+      ⏳ Pending ({{ pending|length }})
+    </h2>
+    {% if pending %}
+    <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:48px;">
+      {% for r in pending %}
+      <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(245,158,11,0.2); border-radius:14px; padding:20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
+        <div>
+          <p style="margin:0 0 4px; font-weight:700;">Guide #{{ r.guide_id }}
+            {% if r.guide %} — {{ r.guide.username }}{% endif %}
+          </p>
+          <p style="margin:0; color:var(--text-secondary); font-size:0.85rem;">
+            {{ r.id_type }} | {{ r.country }} | Submitted {{ r.submitted_at.strftime('%b %d, %Y') if r.submitted_at else '—' }}
+          </p>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button onclick="approveKYC({{ r.guide_id }})" class="btn btn-primary" style="font-size:0.85rem; padding:8px 18px;">✅ Approve</button>
+          <button onclick="rejectKYC({{ r.guide_id }})" class="btn btn-ghost" style="font-size:0.85rem; padding:8px 18px; color:#ef4444; border-color:#ef4444;">❌ Reject</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p style="color:var(--text-muted); margin-bottom:40px;">No pending submissions.</p>
+    {% endif %}
+
+    <!-- Flagged -->
+    {% if flagged %}
+    <h2 style="font-size:1.2rem; font-weight:700; margin-bottom:16px;">⚠️ Flagged ({{ flagged|length }})</h2>
+    <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:48px;">
+      {% for r in flagged %}
+      <div style="background:rgba(255,165,0,0.06); border:1px solid rgba(255,165,0,0.2); border-radius:14px; padding:20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
+        <div>
+          <p style="margin:0 0 4px; font-weight:700;">Guide #{{ r.guide_id }}</p>
+          <p style="margin:0; color:var(--text-secondary); font-size:0.85rem;">{{ r.id_type or '—' }} | {{ r.country or '—' }}</p>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button onclick="approveKYC({{ r.guide_id }})" class="btn btn-primary" style="font-size:0.85rem; padding:8px 18px;">✅ Approve</button>
+          <button onclick="rejectKYC({{ r.guide_id }})" class="btn btn-ghost" style="font-size:0.85rem; padding:8px 18px; color:#ef4444; border-color:#ef4444;">❌ Reject</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Approved -->
+    <h2 style="font-size:1.2rem; font-weight:700; margin-bottom:16px;">✅ Recently Approved ({{ approved|length }})</h2>
+    <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:40px;">
+      {% for r in approved %}
+      <div style="background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.15); border-radius:12px; padding:14px 20px; display:flex; justify-content:space-between;">
+        <span>Guide #{{ r.guide_id }}{% if r.guide %} — {{ r.guide.username }}{% endif %}</span>
+        <span style="color:#10b981; font-size:0.85rem;">Approved {{ r.reviewed_at.strftime('%b %d, %Y') if r.reviewed_at else '—' }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<script>
+async function approveKYC(guideId) {
+  const notes = prompt('Admin notes (optional):') || '';
+  const res   = await fetch(`/api/admin/kyc/${guideId}/approve`, {
+    method: 'POST', credentials: 'include',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ notes })
+  });
+  const data = await res.json();
+  alert(data.message || 'Done');
+  if (data.status === 'success') window.location.reload();
+}
+async function rejectKYC(guideId) {
+  const reason = prompt('Rejection reason:') || 'Documents could not be verified.';
+  const res    = await fetch(`/api/admin/kyc/${guideId}/reject`, {
+    method: 'POST', credentials: 'include',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ reason })
+  });
+  const data = await res.json();
+  alert(data.message || 'Done');
+  if (data.status === 'success') window.location.reload();
+}
+</script>
+{% endblock %}
