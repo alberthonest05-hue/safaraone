@@ -951,6 +951,58 @@ def api_make_admin():
     return jsonify({"message": f"User {username} is now an admin!"})
 
 
+# ── Phase 7: One-time production schema migration ─────────────────────────
+# Visit: GET /api/setup/phase7-migrate?key=<SECRET_KEY>
+# This drops all tables, recreates with Phase 7 schema, and reseeds.
+# Safe to run because all product data is mock/seed data.
+@app.route('/api/setup/phase7-migrate')
+def phase7_migrate():
+    provided_key = request.args.get('key', '')
+    expected_key = os.environ.get('SECRET_KEY', '')
+    if not provided_key or provided_key != expected_key:
+        return jsonify({'error': 'Unauthorized — provide ?key=<SECRET_KEY>'}), 403
+
+    try:
+        db.drop_all()
+        db.create_all()
+
+        from data.mock_data import DESTINATIONS, ACCOMMODATIONS, EXPERIENCES, GUIDES
+
+        for d in DESTINATIONS:
+            dest_data = {k: v for k, v in d.items() if k != 'stats'}
+            dest = Destination(**dest_data)
+            if 'stats' in d:
+                dest.stats = d['stats']
+            db.session.add(dest)
+        db.session.commit()
+
+        for a in ACCOMMODATIONS:
+            db.session.add(Accommodation(**a))
+        db.session.commit()
+
+        for e in EXPERIENCES:
+            db.session.add(Experience(**e))
+        db.session.commit()
+
+        for g in GUIDES:
+            db.session.add(Guide(**{k: v for k, v in g.items()}))
+        db.session.commit()
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Phase 7 schema applied and database reseeded.',
+            'destinations': Destination.query.count(),
+            'accommodations': Accommodation.query.count(),
+            'experiences': Experience.query.count(),
+            'guides': Guide.query.count(),
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        return jsonify({'error': str(e), 'trace': traceback.format_exc()}), 500
+
+
 @app.route('/api/setup/force-seed')
 def force_seed():
     try:
