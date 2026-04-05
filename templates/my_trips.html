@@ -293,11 +293,11 @@
     document.getElementById("modalBtnSpinner").style.display = "inline";
     document.getElementById("modalError").style.display      = "none";
 
-    const token = localStorage.getItem("access_token") || "";
     try {
       const res = await fetch(`/api/bookings/${_currentBookingId}/cancel`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
       });
       const data = await res.json();
 
