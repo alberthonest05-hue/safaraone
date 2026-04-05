@@ -13,64 +13,77 @@
       <p class="booking-subtitle">SafaraOne · Protected by Flutterwave</p>
     </div>
 
-    <!-- ── Step 1: Trip Details ────────────────────────────────────────── -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <!-- STEP 1: TRIP DETAILS                                              -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
     <div class="step-label">STEP 1 — Trip Details</div>
     <div class="details-card glass-inner">
 
-      <!-- Date picker -->
+      {% if booking.item_type in ['accommodation', 'guide'] %}
+      <!-- DATE RANGE for accommodation & guides -->
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label" for="scheduledDate" id="dateLabel">
-            {% if booking.item_type == 'accommodation' %}📅 Check-in Date
-            {% elif booking.item_type == 'guide' %}📅 Trip Start Date
-            {% else %}📅 Visit Date{% endif %}
+          <label class="form-label" for="checkInDate">
+            {{ '🏨 Check-in Date' if booking.item_type == 'accommodation' else '📅 Start Date' }}
           </label>
-          <input
-            type="date"
-            id="scheduledDate"
-            class="form-input"
-            min="{{ today }}"
-            required
-          />
-          <span class="field-hint">Required — choose your preferred date</span>
+          <input type="date" id="checkInDate" class="form-input" required />
         </div>
-
-        <!-- Quantity picker -->
         <div class="form-group">
-          <label class="form-label" for="numGuests" id="quantityLabel">
-            {% if booking.item_type == 'accommodation' %}🌙 Number of Nights
-            {% elif booking.item_type == 'guide' %}📆 Number of Days
-            {% else %}👤 Number of Guests{% endif %}
+          <label class="form-label" for="checkOutDate">
+            {{ '🔑 Check-out Date' if booking.item_type == 'accommodation' else '📅 End Date' }}
           </label>
+          <input type="date" id="checkOutDate" class="form-input" required />
+        </div>
+      </div>
+      <div class="nights-badge" id="nightsBadge" style="display:none;">
+        <span id="nightsText"></span>
+      </div>
+
+      {% else %}
+      <!-- SINGLE DATE + GUESTS for experiences -->
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="visitDate">📅 Visit Date</label>
+          <input type="date" id="visitDate" class="form-input" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">👤 Number of Guests</label>
           <div class="quantity-row">
             <button class="qty-btn" onclick="changeQty(-1)" type="button">−</button>
-            <input
-              type="number"
-              id="numGuests"
-              class="form-input qty-input"
-              value="1"
-              min="1"
-              max="30"
-              readonly
-            />
+            <input type="number" id="numGuests" class="form-input qty-input" value="1" min="1" max="20" readonly />
             <button class="qty-btn" onclick="changeQty(1)" type="button">+</button>
           </div>
         </div>
       </div>
+      {% endif %}
+
+      <p class="field-hint" style="margin-top:8px;">All fields required — enter your travel dates to continue</p>
     </div>
 
-    <!-- ── Step 2: Order Summary ───────────────────────────────────────── -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <!-- STEP 2: ORDER SUMMARY                                             -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
     <div class="step-label">STEP 2 — Order Summary</div>
     <div class="summary-card glass-inner">
       <div class="summary-row">
         <span class="summary-label">{{ booking.item_type | capitalize }}</span>
         <span class="summary-value">{{ booking.item_name }}</span>
       </div>
-      <div class="summary-row">
-        <span class="summary-label">Date</span>
-        <span class="summary-value" id="summaryDate">
-          <span class="placeholder-hint">Select a date above ↑</span>
+      <div class="summary-row" id="rowCheckIn" style="display:none;">
+        <span class="summary-label">
+          {{ 'Check-in' if booking.item_type == 'accommodation' else 'Start Date' }}
         </span>
+        <span class="summary-value" id="summaryCheckIn">—</span>
+      </div>
+      <div class="summary-row" id="rowCheckOut" style="display:none;">
+        <span class="summary-label">
+          {{ 'Check-out' if booking.item_type == 'accommodation' else 'End Date' }}
+        </span>
+        <span class="summary-value" id="summaryCheckOut">—</span>
+      </div>
+      <div class="summary-row" id="rowVisitDate" style="{% if booking.item_type not in ['accommodation', 'guide'] %}display:flex{% else %}display:none{% endif %};">
+        <span class="summary-label">Visit Date</span>
+        <span class="summary-value" id="summaryVisitDate"><span class="placeholder-hint">Select date above ↑</span></span>
       </div>
       <div class="summary-row">
         <span class="summary-label" id="summaryQtyLabel">
@@ -78,15 +91,15 @@
           {% elif booking.item_type == 'guide' %}Days
           {% else %}Guests{% endif %}
         </span>
-        <span class="summary-value" id="summaryQty">1</span>
+        <span class="summary-value" id="summaryQty">—</span>
       </div>
       <div class="summary-row">
         <span class="summary-label">Unit Price</span>
         <span class="summary-value">
           USD {{ "%.2f" | format(booking.amount_usd) }}
-          {% if booking.item_type == 'accommodation' %}/night
-          {% elif booking.item_type == 'guide' %}/day
-          {% else %}/person{% endif %}
+          {% if booking.item_type == 'accommodation' %}<span class="unit-note">/night</span>
+          {% elif booking.item_type == 'guide' %}<span class="unit-note">/day</span>
+          {% else %}<span class="unit-note">/person</span>{% endif %}
         </span>
       </div>
       <div class="summary-row">
@@ -97,16 +110,17 @@
       <div class="summary-total-row">
         <span class="total-label">Total</span>
         <div class="total-values">
-          <span class="total-usd" id="usdDisplay">USD <span id="usdValue">{{ "%.2f" | format(booking.amount_usd) }}</span></span>
-          <span class="total-tzs" id="tzsDisplay" style="display:none;">TZS <span id="tzsValue">—</span></span>
+          <span id="usdDisplay">USD <strong id="usdValue">{{ "%.2f" | format(booking.amount_usd) }}</strong></span>
+          <span id="tzsDisplay" style="display:none;">TZS <strong id="tzsValue">—</strong></span>
         </div>
       </div>
     </div>
 
-    <!-- ── Step 3: Currency + Payment ─────────────────────────────────── -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <!-- STEP 3: CURRENCY & PAYMENT                                        -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
     <div class="step-label">STEP 3 — Currency &amp; Payment</div>
 
-    <!-- Currency Toggle -->
     <div class="currency-toggle-row">
       <span class="currency-label">Price in:</span>
       <div class="toggle-group">
@@ -116,65 +130,52 @@
       <span class="rate-note" id="rateNote"></span>
     </div>
 
-    <!-- Payment Method Tabs -->
     <div class="payment-tabs">
-      <button class="tab-btn active" id="tabCard"   onclick="setPaymentMethod('card')">💳 Card</button>
-      <button class="tab-btn"        id="tabMobile" onclick="setPaymentMethod('mobile_money')">📱 Mobile Money</button>
+      <button class="tab-btn active" id="tabCard"   onclick="setMethod('card')">💳 Card</button>
+      <button class="tab-btn"        id="tabMobile" onclick="setMethod('mobile_money')">📱 Mobile Money</button>
     </div>
 
-    <!-- Card Panel -->
-    <div id="cardPanel" class="glass-inner card-panel">
-      <p class="mm-note">You'll be securely redirected to Flutterwave to enter your card details.</p>
+    <div id="cardPanel" class="glass-inner">
+      <p class="mm-note">You'll be securely redirected to Flutterwave to complete your card payment.</p>
     </div>
-
-    <!-- Mobile Money Panel -->
-    <div id="mobileMoneyPanel" class="glass-inner mobile-money-panel" style="display:none;">
-      <p class="mm-note">Pay with M-Pesa, Tigo Pesa, or Airtel Money (Tanzania).</p>
+    <div id="mobilePanel" class="glass-inner" style="display:none;">
+      <p class="mm-note">Pay instantly with M-Pesa, Tigo Pesa, or Airtel Money (Tanzania).</p>
       <div class="form-group">
         <label class="form-label" for="phoneInput">Mobile Number</label>
-        <input type="tel" id="phoneInput" class="form-input" placeholder="+255 7XX XXX XXX" maxlength="15"/>
-        <span class="field-hint">Your registered M-Pesa / Tigo / Airtel number</span>
+        <input type="tel" id="phoneInput" class="form-input" placeholder="+255 7XX XXX XXX" maxlength="15" />
+        <span class="field-hint">Enter your M-Pesa / Tigo Pesa / Airtel number</span>
       </div>
     </div>
 
-    <!-- Email notice -->
     <div class="receipt-notice">
       📧 A receipt will be emailed to <strong>{{ current_user.email }}</strong> after payment.
     </div>
 
-    <!-- Error -->
     <div id="errorMsg" class="error-banner" style="display:none;"></div>
 
-    <!-- Pay Button -->
-    <button class="pay-btn" id="payBtn" onclick="initiatePayment()">
+    <button class="pay-btn" id="payBtn" onclick="pay()">
       <span id="payBtnText">Pay Now</span>
       <span id="payBtnSpinner" style="display:none;">Processing…</span>
     </button>
-
     <p class="security-note">🔒 256-bit encrypted · PCI DSS compliant · Powered by Flutterwave</p>
 
   </div>
 </div>
 
+<!-- ── Styles ─────────────────────────────────────────────────────────────── -->
 <style>
   .booking-container {
-    min-height: 100vh;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
+    min-height: 100vh; display: flex; align-items: flex-start; justify-content: center;
     padding: 48px 20px;
     background: radial-gradient(ellipse at top, rgba(249,115,22,0.07) 0%, transparent 60%);
   }
   .booking-card {
-    width: 100%; max-width: 560px;
-    border-radius: 20px; padding: 36px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.1);
+    width: 100%; max-width: 580px; border-radius: 20px; padding: 36px;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
     backdrop-filter: blur(16px);
   }
   .glass-inner {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07);
     border-radius: 12px; padding: 20px; margin-bottom: 16px;
   }
   .booking-header { margin-bottom: 28px; }
@@ -184,83 +185,85 @@
   .booking-subtitle { font-size: 13px; color: #64748b; }
 
   .step-label {
-    font-size: 11px; font-weight: 700; color: #f97316;
-    letter-spacing: 0.1em; text-transform: uppercase;
-    margin-bottom: 10px; padding-left: 2px;
+    font-size: 11px; font-weight: 700; color: #f97316; letter-spacing: 0.1em;
+    text-transform: uppercase; margin-bottom: 10px; padding-left: 2px;
   }
 
-  .details-card { margin-bottom: 20px; }
   .form-row { display: flex; gap: 14px; flex-wrap: wrap; }
-  .form-group { flex: 1; min-width: 160px; display: flex; flex-direction: column; gap: 6px; }
+  .form-group { flex: 1; min-width: 150px; display: flex; flex-direction: column; gap: 6px; }
   .form-label { font-size: 13px; color: #94a3b8; font-weight: 600; }
   .form-input {
     background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
     border-radius: 8px; padding: 11px 13px; color: #e2e8f0; font-size: 14px;
-    outline: none; transition: border-color 0.2s;
-    color-scheme: dark;
+    outline: none; transition: border-color 0.2s; color-scheme: dark; width: 100%;
   }
   .form-input:focus { border-color: #f97316; }
-  .form-input.error { border-color: #ef4444; }
+  .form-input.error-field { border-color: #ef4444; box-shadow: 0 0 0 2px rgba(239,68,68,0.15); }
   .field-hint { font-size: 11px; color: #475569; }
 
-  /* Quantity row */
   .quantity-row { display: flex; align-items: center; gap: 8px; }
   .qty-btn {
-    width: 36px; height: 36px; border-radius: 8px; font-size: 18px; font-weight: 700;
-    background: rgba(249,115,22,0.12); border: 1px solid rgba(249,115,22,0.3);
-    color: #f97316; cursor: pointer; transition: background 0.15s; flex-shrink: 0;
+    width: 36px; height: 36px; flex-shrink: 0; border-radius: 8px;
+    font-size: 18px; font-weight: 700; background: rgba(249,115,22,0.12);
+    border: 1px solid rgba(249,115,22,0.3); color: #f97316; cursor: pointer; transition: background 0.15s;
   }
-  .qty-btn:hover { background: rgba(249,115,22,0.22); }
+  .qty-btn:hover { background: rgba(249,115,22,0.25); }
   .qty-input { text-align: center; flex: 1; cursor: default; }
 
+  /* Nights badge */
+  .nights-badge {
+    margin-top: 12px; padding: 8px 14px; border-radius: 8px;
+    background: rgba(249,115,22,0.1); border: 1px solid rgba(249,115,22,0.2);
+    font-size: 13px; color: #f97316; font-weight: 600; text-align: center;
+  }
+
   /* Summary */
-  .summary-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 14px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .summary-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0; font-size: 14px; border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
   .summary-row:last-of-type { border-bottom: none; }
   .summary-label { color: #94a3b8; }
   .summary-value { color: #e2e8f0; font-weight: 500; text-align: right; }
+  .unit-note { font-size: 11px; color: #64748b; margin-left: 2px; }
   .placeholder-hint { color: #475569; font-style: italic; font-size: 12px; }
   .summary-divider { height: 1px; background: rgba(255,255,255,0.07); margin: 12px 0; }
   .summary-total-row { display: flex; justify-content: space-between; align-items: center; }
   .total-label { font-size: 14px; font-weight: 700; color: #f97316; }
   .total-values { text-align: right; }
-  .total-usd, .total-tzs { font-size: 22px; font-weight: 800; color: #ffffff; }
+  #usdDisplay, #tzsDisplay { font-size: 22px; font-weight: 800; color: #fff; display: block; }
 
-  /* Currency toggle */
-  .currency-toggle-row {
-    display: flex; align-items: center; gap: 10px;
-    margin-bottom: 14px; flex-wrap: wrap;
-  }
+  /* Currency */
+  .currency-toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
   .currency-label { font-size: 13px; color: #64748b; }
   .toggle-group { display: flex; gap: 4px; }
   .toggle-btn {
-    padding: 6px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
+    padding: 6px 18px; border-radius: 8px; font-size: 13px; font-weight: 600;
     border: 1px solid rgba(255,255,255,0.1); background: transparent;
     color: #94a3b8; cursor: pointer; transition: all 0.2s;
   }
   .toggle-btn.active { background: #f97316; color: #fff; border-color: #f97316; }
   .rate-note { font-size: 11px; color: #475569; }
 
-  /* Tabs */
+  /* Payment tabs */
   .payment-tabs { display: flex; gap: 10px; margin-bottom: 12px; }
   .tab-btn {
     flex: 1; padding: 12px; border-radius: 10px; font-size: 14px; font-weight: 600;
-    border: 1px solid rgba(255,255,255,0.1);
-    background: rgba(255,255,255,0.03); color: #94a3b8; cursor: pointer; transition: all 0.2s;
+    border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03);
+    color: #94a3b8; cursor: pointer; transition: all 0.2s;
   }
   .tab-btn.active { border-color: #f97316; color: #f97316; background: rgba(249,115,22,0.08); }
-
   .mm-note { font-size: 13px; color: #64748b; margin-bottom: 14px; }
-  .card-panel .mm-note { margin-bottom: 0; }
+  #cardPanel .mm-note { margin-bottom: 0; }
 
   .receipt-notice {
     background: rgba(16,185,129,0.07); border: 1px solid rgba(16,185,129,0.15);
-    border-radius: 8px; padding: 12px 14px; font-size: 13px;
-    color: #6ee7b7; margin-bottom: 20px;
+    border-radius: 8px; padding: 12px 14px; font-size: 13px; color: #6ee7b7; margin-bottom: 20px;
   }
   .error-banner {
     background: rgba(239,68,68,0.10); border: 1px solid rgba(239,68,68,0.2);
-    border-radius: 8px; padding: 12px 14px; font-size: 13px;
-    color: #fca5a5; margin-bottom: 16px;
+    border-radius: 8px; padding: 12px 14px; font-size: 13px; color: #fca5a5; margin-bottom: 16px;
+    line-height: 1.5;
   }
   .pay-btn {
     width: 100%; padding: 16px; border-radius: 12px; font-size: 16px; font-weight: 700;
@@ -275,132 +278,174 @@
     .booking-card { padding: 22px 16px; }
     .booking-title { font-size: 19px; }
     .form-row { flex-direction: column; }
-    .total-usd, .total-tzs { font-size: 18px; }
+    #usdDisplay, #tzsDisplay { font-size: 17px; }
   }
 </style>
 
+<!-- ── JavaScript ─────────────────────────────────────────────────────────── -->
 <script>
-  // ── State ────────────────────────────────────────────────────────────────
-  const bookingId    = {{ booking.id }};
-  const unitPrice    = {{ booking.amount_usd }};   // price per night/day/person
-  const itemType     = "{{ booking.item_type }}";
+  const BOOKING_ID  = {{ booking.id }};
+  const UNIT_PRICE  = {{ booking.amount_usd }};         // per night / day / person
+  const ITEM_TYPE   = "{{ booking.item_type }}";
 
-  let selectedCurrency      = "USD";
-  let selectedPaymentMethod = "card";
-  let liveRate              = null;
+  let currency = "USD";
+  let method   = "card";
+  let liveRate = null;
 
-  // ── Set today as min date ────────────────────────────────────────────────
-  document.addEventListener("DOMContentLoaded", () => {
-    const today = new Date();
-    const yyyy  = today.getFullYear();
-    const mm    = String(today.getMonth() + 1).padStart(2, '0');
-    const dd    = String(today.getDate() + 1).padStart(2, '0'); // tomorrow min
-    document.getElementById("scheduledDate").setAttribute("min", `${yyyy}-${mm}-${dd}`);
+  // ── Fetch TZS rate ────────────────────────────────────────────────────────
+  fetch("/api/fx/tzs-rate").then(r=>r.json()).then(d=>{
+    if (d.status === "success") {
+      liveRate = d.rate;
+      document.getElementById("rateNote").textContent = `1 USD ≈ ${liveRate.toLocaleString()} TZS`;
+      updateTotal();
+    }
+  }).catch(()=>{});
 
-    // Fetch TZS rate
-    fetch("/api/fx/tzs-rate")
-      .then(r => r.json())
-      .then(d => {
-        if (d.status === "success") {
-          liveRate = d.rate;
-          document.getElementById("rateNote").textContent = `1 USD ≈ ${liveRate.toLocaleString()} TZS`;
-          updateTotals();
-        }
-      }).catch(() => {});
+  // ── Date helpers ──────────────────────────────────────────────────────────
+  const tomorrow = (() => {
+    const d = new Date(); d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  })();
+
+  function fmtDate(str) {
+    if (!str) return null;
+    return new Date(str + "T12:00:00Z").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric"});
+  }
+
+  {% if booking.item_type in ['accommodation', 'guide'] %}
+  // ── Date-range logic (accommodation / guide) ──────────────────────────────
+  const checkIn  = document.getElementById("checkInDate");
+  const checkOut = document.getElementById("checkOutDate");
+  checkIn.setAttribute("min", tomorrow);
+  checkOut.setAttribute("min", tomorrow);
+
+  checkIn.addEventListener("change", () => {
+    // Ensure check-out is after check-in
+    if (checkIn.value) {
+      const nextDay = new Date(checkIn.value + "T12:00:00Z");
+      nextDay.setDate(nextDay.getDate() + 1);
+      checkOut.setAttribute("min", nextDay.toISOString().split('T')[0]);
+      if (checkOut.value && checkOut.value <= checkIn.value) checkOut.value = "";
+    }
+    refreshDates();
   });
+  checkOut.addEventListener("change", refreshDates);
 
-  // ── Date change ──────────────────────────────────────────────────────────
-  document.getElementById("scheduledDate").addEventListener("change", () => {
-    const val  = document.getElementById("scheduledDate").value;
-    const summ = document.getElementById("summaryDate");
-    if (val) {
-      const d = new Date(val + "T12:00:00Z");
-      summ.innerHTML = `<span style="color:#e2e8f0;font-weight:600;">${d.toLocaleDateString("en-US",{weekday:"short",year:"numeric",month:"short",day:"numeric"})}</span>`;
-      document.getElementById("scheduledDate").classList.remove("error");
+  function refreshDates() {
+    const ci = checkIn.value, co = checkOut.value;
+    const badge = document.getElementById("nightsBadge");
+    checkIn.classList.remove("error-field");
+    checkOut.classList.remove("error-field");
+
+    if (ci) { document.getElementById("summaryCheckIn").textContent  = fmtDate(ci); document.getElementById("rowCheckIn").style.display  = "flex"; }
+    if (co) { document.getElementById("summaryCheckOut").textContent = fmtDate(co); document.getElementById("rowCheckOut").style.display = "flex"; }
+
+    if (ci && co && co > ci) {
+      const nights = (new Date(co) - new Date(ci)) / 86400000;
+      document.getElementById("summaryQty").textContent = nights;
+      const word = ITEM_TYPE === "accommodation" ? (nights === 1 ? "night" : "nights") : (nights === 1 ? "day" : "days");
+      document.getElementById("nightsText").textContent = `🌙 ${nights} ${word}`;
+      badge.style.display = "block";
+      updateTotal(nights);
     } else {
-      summ.innerHTML = `<span class="placeholder-hint">Select a date above ↑</span>`;
+      badge.style.display = "none";
+      document.getElementById("summaryQty").textContent = "—";
+      updateTotal(0);
+    }
+  }
+
+  {% else %}
+  // ── Single date + guests (experience) ────────────────────────────────────
+  const visitDate = document.getElementById("visitDate");
+  visitDate.setAttribute("min", tomorrow);
+  visitDate.addEventListener("change", () => {
+    if (visitDate.value) {
+      document.getElementById("summaryVisitDate").innerHTML = `<span style="color:#e2e8f0;font-weight:600;">${fmtDate(visitDate.value)}</span>`;
+      visitDate.classList.remove("error-field");
     }
   });
 
-  // ── Quantity ─────────────────────────────────────────────────────────────
-  function changeQty(delta) {
-    const input = document.getElementById("numGuests");
-    const current = parseInt(input.value) || 1;
-    const next = Math.min(Math.max(current + delta, 1), 30);
-    input.value = next;
-    document.getElementById("summaryQty").textContent = next;
-    updateTotals();
+  let _qty = 1;
+  function changeQty(d) {
+    _qty = Math.min(Math.max(_qty + d, 1), 20);
+    document.getElementById("numGuests").value = _qty;
+    document.getElementById("summaryQty").textContent = _qty;
+    updateTotal(_qty);
   }
-
   document.getElementById("numGuests").addEventListener("change", () => {
-    const val = Math.min(Math.max(parseInt(document.getElementById("numGuests").value) || 1, 1), 30);
-    document.getElementById("numGuests").value = val;
-    document.getElementById("summaryQty").textContent = val;
-    updateTotals();
+    _qty = Math.min(Math.max(parseInt(document.getElementById("numGuests").value)||1,1),20);
+    document.getElementById("numGuests").value = _qty;
+    document.getElementById("summaryQty").textContent = _qty;
+    updateTotal(_qty);
   });
+  // Init
+  document.getElementById("summaryQty").textContent = 1;
+  updateTotal(1);
+  {% endif %}
 
-  // ── Totals ────────────────────────────────────────────────────────────────
-  function updateTotals() {
-    const qty   = parseInt(document.getElementById("numGuests").value) || 1;
-    const total = unitPrice * qty;
+  // ── Total calc ────────────────────────────────────────────────────────────
+  function updateTotal(qty) {
+    if (qty === undefined) qty = parseInt(document.getElementById("summaryQty").textContent) || 1;
+    const total = UNIT_PRICE * Math.max(qty, 0);
     document.getElementById("usdValue").textContent = total.toFixed(2);
-    if (liveRate) {
-      document.getElementById("tzsValue").textContent = Math.round(total * liveRate).toLocaleString();
-    }
+    if (liveRate) document.getElementById("tzsValue").textContent = Math.round(total * liveRate).toLocaleString();
   }
 
-  // ── Currency ─────────────────────────────────────────────────────────────
+  // ── Currency ──────────────────────────────────────────────────────────────
   function setCurrency(c) {
-    selectedCurrency = c;
-    document.getElementById("btnUSD").classList.toggle("active", c === "USD");
-    document.getElementById("btnTZS").classList.toggle("active", c === "TZS");
-    document.getElementById("usdDisplay").style.display = c === "USD" ? "block" : "none";
-    document.getElementById("tzsDisplay").style.display = c === "TZS" ? "block" : "none";
-    if (c === "TZS" && !liveRate) {
-      document.getElementById("tzsValue").textContent = "(fetching rate…)";
-    }
+    currency = c;
+    document.getElementById("btnUSD").classList.toggle("active", c==="USD");
+    document.getElementById("btnTZS").classList.toggle("active", c==="TZS");
+    document.getElementById("usdDisplay").style.display = c==="USD" ? "block" : "none";
+    document.getElementById("tzsDisplay").style.display = c==="TZS" ? "block" : "none";
   }
 
-  // ── Payment Method ────────────────────────────────────────────────────────
-  function setPaymentMethod(method) {
-    selectedPaymentMethod = method;
-    document.getElementById("tabCard").classList.toggle("active",   method === "card");
-    document.getElementById("tabMobile").classList.toggle("active", method === "mobile_money");
-    document.getElementById("cardPanel").style.display         = method === "card"         ? "block" : "none";
-    document.getElementById("mobileMoneyPanel").style.display = method === "mobile_money" ? "block" : "none";
+  // ── Payment method ────────────────────────────────────────────────────────
+  function setMethod(m) {
+    method = m;
+    document.getElementById("tabCard").classList.toggle("active",   m==="card");
+    document.getElementById("tabMobile").classList.toggle("active", m==="mobile_money");
+    document.getElementById("cardPanel").style.display   = m==="card"         ? "block" : "none";
+    document.getElementById("mobilePanel").style.display = m==="mobile_money" ? "block" : "none";
   }
 
-  // ── Errors ────────────────────────────────────────────────────────────────
+  // ── Error helpers ─────────────────────────────────────────────────────────
   function showError(msg) {
     const el = document.getElementById("errorMsg");
-    el.textContent = msg;
+    el.innerHTML = msg;
     el.style.display = "block";
-    el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    el.scrollIntoView({ behavior:"smooth", block:"nearest" });
   }
-  function clearError() {
-    document.getElementById("errorMsg").style.display = "none";
-  }
+  function clearError() { document.getElementById("errorMsg").style.display = "none"; }
 
   // ── Pay ───────────────────────────────────────────────────────────────────
-  async function initiatePayment() {
+  async function pay() {
     clearError();
 
-    // Validate date
-    const dateVal = document.getElementById("scheduledDate").value;
-    if (!dateVal) {
-      document.getElementById("scheduledDate").classList.add("error");
-      showError("⚠️ Please select your travel date before proceeding.");
-      document.getElementById("scheduledDate").focus();
-      return;
-    }
+    // Build payload based on item type
+    let payload = { booking_id: BOOKING_ID, payment_method: method, currency };
 
-    // Validate phone
-    if (selectedPaymentMethod === "mobile_money") {
-      const phone = document.getElementById("phoneInput").value.trim();
-      if (!phone || phone.length < 10) {
-        showError("Please enter a valid mobile number (e.g. +255 712 345 678).");
-        return;
-      }
+    {% if booking.item_type in ['accommodation', 'guide'] %}
+    const ci = document.getElementById("checkInDate").value;
+    const co = document.getElementById("checkOutDate").value;
+    if (!ci) { document.getElementById("checkInDate").classList.add("error-field"); showError("⚠️ Please select your check-in date."); return; }
+    if (!co) { document.getElementById("checkOutDate").classList.add("error-field"); showError("⚠️ Please select your check-out date."); return; }
+    if (co <= ci) { showError("⚠️ Check-out date must be after check-in."); return; }
+    payload.check_in_date  = ci;
+    payload.check_out_date = co;
+    const nights = (new Date(co) - new Date(ci)) / 86400000;
+    payload.num_guests = nights;
+    {% else %}
+    const vd = document.getElementById("visitDate").value;
+    if (!vd) { document.getElementById("visitDate").classList.add("error-field"); showError("⚠️ Please select your visit date."); return; }
+    payload.check_in_date = vd;
+    payload.num_guests = parseInt(document.getElementById("numGuests").value) || 1;
+    {% endif %}
+
+    if (method === "mobile_money") {
+      const ph = document.getElementById("phoneInput").value.trim();
+      if (!ph || ph.length < 10) { showError("⚠️ Please enter a valid mobile number (e.g. +255 712 345 678)."); return; }
+      payload.phone_number = ph;
     }
 
     const btn = document.getElementById("payBtn");
@@ -408,22 +453,10 @@
     document.getElementById("payBtnText").style.display    = "none";
     document.getElementById("payBtnSpinner").style.display = "inline";
 
-    const qty = parseInt(document.getElementById("numGuests").value) || 1;
-    const payload = {
-      booking_id:     bookingId,
-      payment_method: selectedPaymentMethod,
-      currency:       selectedCurrency,
-      scheduled_date: dateVal,
-      num_guests:     qty,
-    };
-    if (selectedPaymentMethod === "mobile_money") {
-      payload.phone_number = document.getElementById("phoneInput").value.trim();
-    }
-
     try {
       const token = localStorage.getItem("access_token") || "";
       const res   = await fetch("/api/create-checkout-session", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify(payload),
       });
@@ -431,13 +464,13 @@
       if (data.status === "success" && data.session_url) {
         window.location.href = data.session_url;
       } else {
-        showError(data.message || "An error occurred. Please try again.");
+        showError(`❌ ${data.message || "An error occurred. Please try again."}<br><small>If you are testing without a live FLW key, payment will not process until a real key is added in Render.</small>`);
         btn.disabled = false;
         document.getElementById("payBtnText").style.display    = "inline";
         document.getElementById("payBtnSpinner").style.display = "none";
       }
     } catch (err) {
-      showError("Connection error. Please check your internet and try again.");
+      showError("🔌 Connection error. Please check your internet and try again.");
       btn.disabled = false;
       document.getElementById("payBtnText").style.display    = "inline";
       document.getElementById("payBtnSpinner").style.display = "none";

@@ -1322,51 +1322,63 @@ def create_checkout_session():
     payment_method  = data.get('payment_method', 'card')
     currency        = data.get('currency', 'USD').upper()
     phone_number    = data.get('phone_number', '')
-    scheduled_date  = data.get('scheduled_date', '')   # NEW — from date picker
-    num_guests      = int(data.get('num_guests', 1))   # NEW — nights/days/guests
+    check_in_date   = data.get('check_in_date', '') or data.get('scheduled_date', '')
+    check_out_date  = data.get('check_out_date', '')   # For accommodation / guide
+    num_units       = int(data.get('num_guests', 1))   # nights/days/guests
 
     if not booking_id:
         return jsonify({'status': 'error', 'message': 'booking_id is required'}), 400
-    if not scheduled_date:
-        return jsonify({'status': 'error', 'message': 'Please select a date for your booking.'}), 400
+    if not check_in_date:
+        return jsonify({'status': 'error', 'message': 'Please select your trip start date.'}), 400
 
     booking = Booking.query.filter_by(id=booking_id, user_id=current_user_id).first()
     if not booking:
-        return jsonify({'status': 'error', 'message': 'Booking not found'}), 404
-    if booking.status != 'pending':
-        return jsonify({'status': 'error', 'message': 'Booking is not in pending state'}), 400
+        return jsonify({'status': 'error', 'message': 'Booking not found or session expired. Please refresh.'}), 404
+    if booking.status not in ('pending',):
+        return jsonify({'status': 'error', 'message': 'This booking has already been processed.'}), 400
     if payment_method == 'mobile_money' and not phone_number:
-        return jsonify({'status': 'error', 'message': 'phone_number is required for mobile money'}), 400
-
-    # Save date + guest count to booking
-    try:
-        from datetime import datetime as _dt
-        booking.scheduled_date = _dt.strptime(scheduled_date, '%Y-%m-%d').date()
-    except (ValueError, TypeError):
-        return jsonify({'status': 'error', 'message': 'Invalid date format. Use YYYY-MM-DD.'}), 400
-
-    booking.num_guests = num_guests
-    # amount_usd on the booking is the unit price (per night/day/person).
-    # Multiply by quantity to get the real total charged by Flutterwave.
-    unit_price = float(booking.amount_usd)
-    total_usd  = round(unit_price * num_guests, 2)
-    booking.amount_usd = total_usd
+        return jsonify({'status': 'error', 'message': 'Phone number is required for Mobile Money.'}), 400
 
     user = db.session.get(User, current_user_id)
     if not user:
         return jsonify({'status': 'error', 'message': 'User not found'}), 404
 
-    # Currency conversion
-    amount_usd = float(booking.amount_usd)
-    amount_for_charge = amount_usd
-    tzs_amount = None
+    # ── Parse dates ────────────────────────────────────────────────────────
+    from datetime import datetime as _dt, timedelta as _td
+    try:
+        checkin_obj  = _dt.strptime(check_in_date, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return jsonify({'status': 'error', 'message': 'Invalid check-in date format.'}), 400
+
+    # For accommodation/guide: compute nights/days from date range
+    if check_out_date and booking.item_type in ('accommodation', 'guide'):
+        try:
+            checkout_obj = _dt.strptime(check_out_date, '%Y-%m-%d').date()
+            nights = (checkout_obj - checkin_obj).days
+            if nights < 1:
+                return jsonify({'status': 'error', 'message': 'Check-out must be after check-in.'}), 400
+            num_units = nights
+        except (ValueError, TypeError):
+            return jsonify({'status': 'error', 'message': 'Invalid check-out date format.'}), 400
+
+    # ── Persist trip details on booking (without changing amount_usd unit price) ─
+    booking.scheduled_date = checkin_obj
+    booking.num_guests     = num_units
+    # Do NOT mutate amount_usd — it is the unit price (per night/day/person)
+    # Compute total only for Flutterwave charge
+    unit_price    = float(booking.amount_usd)
+    total_usd     = round(unit_price * num_units, 2)
+
+    # ── Currency conversion ────────────────────────────────────────────────
+    amount_for_charge = total_usd
+    tzs_amount        = None
     if currency == 'TZS':
-        rate_data = _get_tzs_rate_internal()
-        rate = rate_data.get('rate', 2650.0)
-        tzs_amount = round(amount_usd * rate, 2)
+        rate_data         = _get_tzs_rate_internal()
+        rate              = rate_data.get('rate', 2650.0)
+        tzs_amount        = round(total_usd * rate, 2)
         amount_for_charge = tzs_amount
 
-    tx_ref = f"saf-{booking.id}-{''.join(random.choices(string.ascii_lowercase + string.digits, k=8))}"
+    tx_ref       = f"saf-{booking.id}-{''.join(random.choices(string.ascii_lowercase + string.digits, k=8))}"
     redirect_url = url_for('payment_callback', _external=True)
 
     payload = {
@@ -1378,7 +1390,7 @@ def create_checkout_session():
         'meta':         {'booking_id': booking.id, 'payment_method': payment_method, 'currency': currency},
         'customizations': {
             'title':       'SafaraOne',
-            'description': f"Booking: {booking.item_name or 'Trip'}",
+            'description': f"Booking: {booking.item_name or 'Trip'} ({num_units} {'night(s)' if booking.item_type == 'accommodation' else 'day(s)' if booking.item_type == 'guide' else 'guest(s)'})",
             'logo':        'https://safaraone.onrender.com/static/img/logo.png',
         },
     }
@@ -1390,14 +1402,16 @@ def create_checkout_session():
 
     flw_secret = os.environ.get('FLW_SECRET_KEY', '')
     try:
-        resp = requests.post(
+        resp   = requests.post(
             'https://api.flutterwave.com/v3/payments',
             json=payload,
             headers={'Authorization': f'Bearer {flw_secret}'},
-            timeout=10,
+            timeout=12,
         )
         result = resp.json()
+
         if result.get('status') == 'success':
+            # Only now save FLW ref and currency — do NOT change amount_usd
             booking.tx_ref         = tx_ref
             booking.currency       = currency
             booking.tzs_amount     = tzs_amount
@@ -1405,18 +1419,19 @@ def create_checkout_session():
             db.session.commit()
             return jsonify({'status': 'success', 'session_url': result['data']['link'], 'tx_ref': tx_ref})
         else:
-            db.session.delete(booking)
-            db.session.commit()
-            return jsonify({'status': 'error', 'message': result.get('message', 'Payment gateway error. Please try again.')}), 502
+            # ⚠️ Do NOT delete the booking — keep as pending so user can retry
+            db.session.rollback()
+            flw_msg = result.get('message', 'Payment gateway error. Please check your keys.')
+            app.logger.error(f'[CHECKOUT] FLW error: {flw_msg} | payload: {payload}')
+            return jsonify({'status': 'error', 'message': f'Payment gateway: {flw_msg}'}), 502
+
     except requests.exceptions.Timeout:
-        db.session.delete(booking)
-        db.session.commit()
+        db.session.rollback()
         return jsonify({'status': 'error', 'message': 'Payment gateway timed out. Please try again.'}), 504
     except Exception as e:
-        db.session.delete(booking)
-        db.session.commit()
+        db.session.rollback()
         app.logger.error(f'[CHECKOUT] Unexpected error: {e}')
-        return jsonify({'status': 'error', 'message': 'An unexpected error occurred.'}), 500
+        return jsonify({'status': 'error', 'message': f'Unexpected error: {str(e)}'}), 500
 
 
 
