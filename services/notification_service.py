@@ -1,16 +1,18 @@
 """
-SafaraOne — Notification Service (Phase 8, Day 2, Feature #80)
-==============================================================
-Creates in-app notifications (stored in DB) and dispatches
-Firebase Cloud Messaging (FCM) push notifications.
+SafaraOne — Notification Service — FINAL (circular-import-free)
+================================================================
+REPLACES: services/notification_service.py
 
-Uses extensions.py for db — zero circular import risk.
+WHAT CHANGED FROM PREVIOUS VERSION:
+  No app module imports. Uses extensions.py for db.
+  db imported from extensions.py — no circular dependency possible.
+  Zero circular import risk.
 """
 
 import os
 import logging
 
-# Clean import — no app dependency whatsoever
+# ── Clean import — no app dependency ──────────────────────────────────────
 from extensions import db
 from models import Notification
 
@@ -75,7 +77,9 @@ def notify(user_id: int, notif_type: str, title: str, message: str, link: str = 
     """
     Create an in-app Notification record and optionally fire an FCM push.
     Safe to call from any route or service — never raises.
-    Returns True if DB record was created, False on error.
+
+    Returns:
+        True if DB record was created, False on error.
     """
     try:
         notif = Notification(
@@ -152,30 +156,4 @@ def notify_kyc_result(guide_user, approved: bool, reason: str = None):
             title="Verification Failed ❌",
             message=f"Verification not approved. Reason: {reason or 'Please contact support.'}",
             link="/dashboard/kyc",
-        )
-
-
-def notify_booking_cancelled(booking, cancelled_by: str = "tourist"):
-    """Fires cancellation notification to the other party."""
-    if cancelled_by == "tourist" and booking.item_type == "guide":
-        try:
-            from models import Guide
-            guide_record = Guide.query.get(booking.item_id)
-            if guide_record and guide_record.user_id:
-                notify(
-                    user_id=guide_record.user_id,
-                    notif_type="booking_cancelled",
-                    title="Booking Cancelled",
-                    message=f"Booking #{booking.id} has been cancelled by the tourist.",
-                    link="/dashboard/bookings",
-                )
-        except Exception as e:
-            logger.warning(f"[NOTIFY] Cancellation notify failed: {e}")
-    else:
-        notify(
-            user_id=booking.user_id,
-            notif_type="booking_cancelled",
-            title="Booking Cancelled",
-            message=f"Your booking #{booking.id} has been cancelled.",
-            link="/my-trips",
         )

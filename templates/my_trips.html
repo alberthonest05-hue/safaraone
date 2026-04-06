@@ -299,9 +299,16 @@
         headers: { "Content-Type": "application/json" },
         credentials: "include",
       });
-      const data = await res.json();
 
-      if (data.status === "success") {
+      // Always try to parse JSON, but handle non-JSON responses (500 HTML pages)
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (_) {
+        data = { status: res.ok ? "success" : "error", message: `Server error (${res.status})` };
+      }
+
+      if (res.ok && data.status === "success") {
         document.getElementById("cancelModal").style.display = "none";
         document.body.style.overflow = "";
 
@@ -330,14 +337,15 @@
           feedback.style.display = "block";
         }
       } else {
-        document.getElementById("modalError").textContent   = data.message || "Could not cancel. Please try again.";
+        const errMsg = data.message || (res.status === 400 ? "Already cancelled." : "Could not cancel. Please try again.");
+        document.getElementById("modalError").textContent   = errMsg;
         document.getElementById("modalError").style.display = "block";
         btn.disabled = false;
         document.getElementById("modalBtnText").style.display    = "inline";
         document.getElementById("modalBtnSpinner").style.display = "none";
       }
     } catch (err) {
-      document.getElementById("modalError").textContent   = "Connection error. Please try again.";
+      document.getElementById("modalError").textContent   = "Network error. Please check your connection.";
       document.getElementById("modalError").style.display = "block";
       btn.disabled = false;
       document.getElementById("modalBtnText").style.display    = "inline";

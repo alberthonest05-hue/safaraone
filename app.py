@@ -30,45 +30,31 @@ import requests
 # Phase 2B: Use DB-constrained OpenAI Planner from services
 from services.planner import generate_itinerary
 
-# Phase 7: Email service (SendGrid → Brevo → console stub)
-try:
-    from services.email_service import send_booking_receipt, send_cancellation_email
-except Exception as _email_import_err:
-    import logging
-    logging.warning(f'[EMAIL] Could not import email_service: {_email_import_err}')
-    def send_booking_receipt(*a, **kw): return False
-    def send_cancellation_email(*a, **kw): return False
-
-# Phase 8: Notification service
-try:
-    from services.notification_service import notify, notify_booking_confirmed, notify_review_received
-except Exception as _notif_import_err:
-    import logging
-    logging.warning(f'[NOTIFY] Could not import notification_service: {_notif_import_err}')
-    def notify(*a, **kw): pass
-    def notify_booking_confirmed(*a, **kw): pass
-    def notify_review_received(*a, **kw): pass
-
-# Phase 8: Escrow service
-try:
-    from services.escrow_service import initiate_escrow, settle_escrow, refund_escrow, compute_dynamic_price
-except Exception as _escrow_import_err:
-    import logging
-    logging.warning(f'[ESCROW] Could not import escrow_service: {_escrow_import_err}')
-    def initiate_escrow(*a, **kw): return {"status": "error"}
-    def settle_escrow(*a, **kw): return {"status": "error"}
-    def refund_escrow(*a, **kw): return {"status": "error"}
-    def compute_dynamic_price(base_price, *a, **kw): return {"base_price": base_price, "final_price": base_price, "multiplier": 1.0, "reason": "unavailable"}
-
-# Phase 8: KYC service
-try:
-    from services.kyc_service import submit_kyc, get_kyc_status, process_sumsub_webhook
-except Exception as _kyc_import_err:
-    import logging
-    logging.warning(f'[KYC] Could not import kyc_service: {_kyc_import_err}')
-    def submit_kyc(*a, **kw): return {"success": True, "stub": True}
-    def get_kyc_status(guide_id): return {"status": "not_submitted"}
-    def process_sumsub_webhook(*a, **kw): return False
+# ── Phase 8 Service Imports (Universal Support) ──────────────────────────────
+from services.notification_service import (
+    notify,
+    notify_booking_confirmed,
+    notify_review_received,
+    notify_escrow_settled,
+    notify_kyc_result,
+)
+from services.escrow_service import (
+    initiate_escrow,
+    settle_escrow,
+    refund_escrow,
+    compute_dynamic_price,
+)
+from services.kyc_service import (
+    submit_kyc,
+    get_kyc_status,
+    process_sumsub_webhook,
+)
+from services.email_service import (
+    send_receipt_email,
+    send_booking_receipt,
+    send_cancellation_email,
+    send_booking_request_email,
+)
 
 # Phase 7: In-memory FX rate cache (1-hour TTL)
 _tzs_rate_cache = {
@@ -128,6 +114,62 @@ try:
 except Exception as _cloud_err:
     import logging
     logging.warning(f'[CLOUDINARY] Init failed: {_cloud_err}')
+
+
+# ── Phase 8 — Universal Item Owner Helper ────────────────────────────────────
+def get_item_owner(item_type: str, item_id) -> "User | None":
+    """
+    Returns the User who owns a given listing, or None if not found.
+
+    item_type values stored in Booking.item_type:
+      "guide"      → the guide IS a User (role='guide'); item_id = user.id
+      "stay"       → maps to Accommodation model; owner = accommodation.host_id
+      "experience" → maps to Experience model; owner = experience.host_id
+
+    item_id: always stored as an integer in the DB. Cast to int defensively.
+
+    This function never raises — returns None on any lookup failure.
+    """
+    try:
+        safe_id = int(item_id)
+    except (TypeError, ValueError):
+        app.logger.warning(f"[get_item_owner] Cannot cast item_id={item_id!r} to int")
+        return None
+
+    try:
+        if item_type == "guide":
+            # Guides are Users with role='guide' — item_id IS the user.id
+            return db.session.get(User, safe_id)
+
+        elif item_type == "stay" or item_type == "accommodation":
+            # "stay" → Accommodation model
+            accommodation = db.session.get(Accommodation, str(safe_id)) if isinstance(safe_id, int) else db.session.get(Accommodation, safe_id)
+            # Re-evaluating: Accommodation IDs can be strings.
+            if not accommodation:
+                accommodation = db.session.get(Accommodation, str(item_id))
+            
+            if accommodation is None:
+                return None
+            # Defensive: support host_id or user_id field name
+            owner_id = getattr(accommodation, "host_id", None) \
+                    or getattr(accommodation, "user_id", None)
+            return db.session.get(User, owner_id) if owner_id else None
+
+        elif item_type == "experience":
+            experience = db.session.get(Experience, str(item_id))
+            if experience is None:
+                return None
+            owner_id = getattr(experience, "host_id", None) \
+                    or getattr(experience, "user_id", None)
+            return db.session.get(User, owner_id) if owner_id else None
+
+        else:
+            app.logger.warning(f"[get_item_owner] Unknown item_type: {item_type!r}")
+            return None
+
+    except Exception as e:
+        app.logger.error(f"[get_item_owner] Lookup failed item_type={item_type} item_id={item_id}: {e}")
+        return None
 
 @jwt.unauthorized_loader
 def unauthorized_callback(reason):
@@ -1335,236 +1377,356 @@ def my_trips():
 
 
 # ── Phase 7, Feature #36 — Upgraded Cancellation Flow ────────────────────
-@app.route('/api/bookings/<int:booking_id>/cancel', methods=['POST'])
+@app.route("/api/bookings/<int:booking_id>/cancel", methods=["POST"])
 @jwt_required()
 def cancel_booking(booking_id):
     """
-    Cancels a booking with automated refund logic.
-    >48hrs before trip  → auto-refund via Flutterwave
-    ≤48hrs before trip  → flagged for admin review
-    Sends cancellation email in both cases.
+    Cancel a booking. Identifies initiator (tourist vs host) and notifies
+    the other party. Triggers refund if eligible (Phase 7 logic).
+
+    OBJECTIVE 2D: Cross-party cancellation notifications.
     """
     current_user_id = int(get_jwt_identity())
-    booking = Booking.query.filter_by(id=booking_id, user_id=current_user_id).first()
+    actor = db.session.get(User, current_user_id)
+    if not actor:
+        return jsonify({"status": "error", "message": "User not found"}), 404
 
+    booking = db.session.get(Booking, booking_id)
     if not booking:
-        return jsonify({'status': 'error', 'message': 'Booking not found'}), 404
-    if booking.status == 'cancelled':
-        return jsonify({'status': 'error', 'message': 'Booking is already cancelled'}), 400
-    if booking.status == 'pending':
-        booking.status = 'cancelled'
-        db.session.commit()
-        return jsonify({'status': 'success', 'message': 'Booking cancelled (no charge).', 'refund': None})
+        return jsonify({"status": "error", "message": "Booking not found"}), 404
 
-    # Determine refund eligibility
-    now_utc = datetime.now(timezone.utc)
-    refund_eligible = False
+    # ── Authorisation: tourist OR listing owner OR admin ──────────────────
+    is_tourist = (booking.user_id == current_user_id)
+    listing_owner = get_item_owner(booking.item_type, booking.item_id)
+    is_owner   = listing_owner and (listing_owner.id == current_user_id)
+    is_admin   = getattr(actor, "is_admin", False)
+
+    if not (is_tourist or is_owner or is_admin):
+        return jsonify({"status": "error", "message": "Not authorised to cancel this booking"}), 403
+
+    if booking.status == "cancelled":
+        return jsonify({"status": "error", "message": "Booking is already cancelled"}), 400
+
+    # ── Pending bookings: no payment captured — cancel cleanly ───────────
+    if booking.status == "pending":
+        booking.status = "cancelled"
+        db.session.commit()
+        return jsonify({"status": "success", "message": "Booking cancelled (no charge).",
+                        "refund": None})
+
+    # ── Refund eligibility (Phase 7 logic) ───────────────────────────────
+    from datetime import datetime, timezone
+    now_utc          = datetime.now(timezone.utc)
+    refund_eligible  = False
     hours_until_trip = None
+
     if booking.scheduled_date:
-        trip_dt = booking.scheduled_date.replace(tzinfo=timezone.utc) if booking.scheduled_date.tzinfo is None else booking.scheduled_date
+        # Avoid issues with naive/aware datetimes
+        trip_dt = booking.scheduled_date
+        if trip_dt.tzinfo is None:
+            trip_dt = trip_dt.replace(tzinfo=timezone.utc)
+        
         hours_until_trip = (trip_dt - now_utc).total_seconds() / 3600
-        refund_eligible = hours_until_trip > 48
+        refund_eligible  = hours_until_trip > 48
 
     refund_info = {
-        'refund_eligible':  refund_eligible,
-        'hours_until_trip': hours_until_trip,
-        'refund_status':    None,
-        'refund_id':        None,
-        'refund_amount':    None,
-        'refund_currency':  booking.currency or 'USD',
+        "refund_eligible":  refund_eligible,
+        "hours_until_trip": hours_until_trip,
+        "refund_status":    None,
+        "refund_id":        None,
+        "refund_amount":    None,
+        "refund_currency":  booking.currency or "USD",
     }
 
     if refund_eligible and booking.tx_id:
-        flw_secret = os.environ.get('FLW_SECRET_KEY', '')
+        flw_secret    = os.environ.get("FLW_SECRET_KEY", "")
+        refund_amount = booking.tzs_amount if booking.currency == "TZS" else booking.amount_usd
         try:
-            refund_amount = booking.tzs_amount if booking.currency == 'TZS' else booking.amount_usd
-            resp = requests.post(
-                f'https://api.flutterwave.com/v3/transactions/{booking.tx_id}/refund',
-                json={'amount': refund_amount},
-                headers={'Authorization': f'Bearer {flw_secret}'},
+            import requests
+            resp   = requests.post(
+                f"https://api.flutterwave.com/v3/transactions/{booking.tx_id}/refund",
+                json={"amount": refund_amount},
+                headers={"Authorization": f"Bearer {flw_secret}"},
                 timeout=10,
             )
             result = resp.json()
-            if result.get('status') == 'success':
-                refund_data = result.get('data', {})
-                booking.refund_status = 'processed'
-                booking.flw_refund_id = str(refund_data.get('id', ''))
-                refund_info.update({'refund_status': 'processed', 'refund_id': booking.flw_refund_id, 'refund_amount': str(refund_amount)})
-                app.logger.info(f'[REFUND] Processed for booking #{booking_id}')
+            if result.get("status") == "success":
+                booking.refund_status = "processed"
+                booking.flw_refund_id = str(result["data"].get("id", ""))
+                refund_info.update({
+                    "refund_status":  "processed",
+                    "refund_id":      booking.flw_refund_id,
+                    "refund_amount":  str(refund_amount),
+                })
             else:
-                booking.refund_status = 'requested'
-                refund_info['refund_status'] = 'requested'
-                app.logger.warning(f'[REFUND] FLW error for #{booking_id}: {result}')
+                booking.refund_status = "requested"
+                refund_info["refund_status"] = "requested"
         except Exception as e:
-            booking.refund_status = 'requested'
-            refund_info['refund_status'] = 'requested'
-            app.logger.error(f'[REFUND] Exception for #{booking_id}: {e}')
+            booking.refund_status = "requested"
+            refund_info["refund_status"] = "requested"
+            app.logger.error(f"[CANCEL] Refund API failed for booking #{booking_id}: {e}")
     else:
-        booking.refund_status = 'requested'
-        refund_info['refund_status'] = 'requested'
+        booking.refund_status = "requested"
+        refund_info["refund_status"] = "requested"
 
-    booking.status = 'cancelled'
+    booking.status = "cancelled"
     db.session.commit()
 
-    # Phase 8: notify guide of cancellation
-    try:
-        if booking.item_type == 'guide':
-            guide_user = User.query.filter_by(id=booking.item_id).first() or \
-                         User.query.join(Guide, Guide.user_id == User.id)\
-                               .filter(Guide.id == booking.item_id).first()
-            if guide_user:
-                notify(
-                    user_id=guide_user.id,
-                    notif_type="booking_cancelled",
-                    title="Booking Cancelled",
-                    message=f"A tourist cancelled their booking for {booking.scheduled_date.strftime('%b %d, %Y') if booking.scheduled_date else 'an upcoming date'}.",
-                    link="/dashboard/bookings",
-                )
-    except Exception: pass
+    # ── OBJECTIVE 2D: Cross-party cancellation notifications ─────────────
+    tourist = db.session.get(User, booking.user_id)
 
-    # Send cancellation email (best-effort)
-    tourist = db.session.get(User, current_user_id)
+    try:
+        if is_tourist:
+            # Tourist cancelled — notify the host/guide
+            if listing_owner:
+                notify(
+                    user_id    = listing_owner.id,
+                    notif_type = "booking_cancelled",
+                    title      = "Booking Cancelled by Tourist",
+                    message    = (
+                        f"The tourist cancelled their booking for "
+                        f"{booking.item_name or 'your listing'} "
+                        f"on {booking.scheduled_date.strftime('%b %d, %Y') if booking.scheduled_date else 'the booked date'}."
+                    ),
+                    link = "/dashboard/bookings" if booking.item_type == "guide"
+                           else "/host/dashboard",
+                )
+
+        elif is_owner or is_admin:
+            # Host/guide/admin cancelled — notify the tourist
+            canceller_label = "The host" if is_owner else "SafaraOne support"
+            if tourist:
+                notify(
+                    user_id    = tourist.id,
+                    notif_type = "booking_cancelled",
+                    title      = "Booking Cancelled ❌",
+                    message    = (
+                        f"{canceller_label} cancelled your booking for "
+                        f"{booking.item_name or 'your trip'} "
+                        f"on {booking.scheduled_date.strftime('%b %d, %Y') if booking.scheduled_date else 'the booked date'}. "
+                        f"{'A refund has been submitted.' if refund_info['refund_status'] == 'processed' else 'Your refund request is under review.'}"
+                    ),
+                    link = "/my-trips",
+                )
+
+    except Exception as e:
+        app.logger.error(f"[CANCEL] Notification failed for booking #{booking_id}: {e}")
+
+    # ── Send cancellation email (Phase 7) ─────────────────────────────────
     if tourist:
+        booking_info_for_email = {
+            "booking_id":    booking.id,
+            "item_name":     booking.item_name or "Your booking",
+            "item_type":     booking.item_type.capitalize() if booking.item_type else "Booking",
+            "scheduled_date": str(booking.scheduled_date) if booking.scheduled_date else "—",
+        }
         try:
+            from services.email_service import send_cancellation_email
             send_cancellation_email(
-                user_email=tourist.email,
-                username=tourist.username,
-                booking_info={
-                    'booking_id':    booking.id,
-                    'item_name':     booking.item_name or 'Your booking',
-                    'item_type':     booking.item_type.capitalize() if booking.item_type else 'Booking',
-                    'scheduled_date': str(booking.scheduled_date) if booking.scheduled_date else '—',
-                },
-                refund_info=refund_info,
+                user_email   = tourist.email,
+                username     = tourist.username,
+                booking_info = booking_info_for_email,
+                refund_info  = refund_info,
             )
         except Exception as e:
-            app.logger.error(f'[EMAIL] Cancellation email failed for #{booking_id}: {e}')
+            app.logger.error(f"[CANCEL] Cancellation email failed for booking #{booking_id}: {e}")
 
-    return jsonify({'status': 'success', 'message': 'Booking cancelled successfully.', 'refund': refund_info})
+    return jsonify({
+        "status":  "success",
+        "message": "Booking cancelled successfully.",
+        "refund":  refund_info,
+    })
 
+
+# ── Phase 8 — Host/Guide Booking Approval ─────────────────────────────────────────
+@app.route("/api/bookings/<int:booking_id>/approve", methods=["POST"])
+@jwt_required()
+def approve_booking(booking_id):
+    """
+    Host/guide approves a pending request. 
+    Triggers: Status update, Tourist Notification, and Escrow Initiation.
+    """
+    current_user_id = int(get_jwt_identity())
+    owner = db.session.get(User, current_user_id)
+
+    # 1. Authorization Check
+    if not owner or owner.role not in ("guide", "host", "operator", "admin"):
+        return jsonify({"status": "error", "message": "Not authorized to approve bookings"}), 403
+
+    booking = db.session.get(Booking, booking_id)
+    if not booking:
+        return jsonify({"status": "error", "message": "Booking not found"}), 404
+
+    # 2. Ownership Verification
+    listing_owner = get_item_owner(booking.item_type, booking.item_id)
+    if not listing_owner or listing_owner.id != current_user_id:
+        if not getattr(owner, 'is_admin', False):
+            return jsonify({"status": "error", "message": "You do not own this listing"}), 403
+
+    # 3. Status Transition Logic
+    if booking.status != "pending":
+        return jsonify({"status": "error", "message": f"Booking is already {booking.status}"}), 400
+
+    try:
+        booking.status = "confirmed"
+        
+        # 4. Notify Tourist (Objective 2C)
+        tourist = db.session.get(User, booking.user_id)
+        if tourist:
+            notify(
+                user_id=tourist.id,
+                notif_type="booking_confirmed",
+                title="Booking Approved! ",
+                message=f"Your booking for {booking.item_name} has been approved by {owner.username}.",
+                link="/my-trips"
+            )
+
+        # 5. Initiate Escrow for Guides (Phase 8)
+        if booking.item_type == "guide":
+            from services.escrow_service import initiate_escrow
+            # Retrieve the Flutterwave sub-account ID stored on the User model
+            sub_account = getattr(owner, "flw_sub_account_id", None)
+            initiate_escrow(booking, sub_account)
+
+        db.session.commit()
+        return jsonify({"status": "success", "message": "Booking approved and escrow initiated."})
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Approval failed for booking {booking_id}: {str(e)}")
+        return jsonify({"status": "error", "message": "Internal server error during approval"}), 500
 
 
 # ── Phase 7, Features #43 + #44 — Mobile Money + TZS Checkout ────────────
-@app.route('/api/create-checkout-session', methods=['POST'])
+@app.route("/api/create-checkout-session", methods=["POST"])
 @jwt_required()
 def create_checkout_session():
+    """
+    Phase 7+8: Unified checkout supporting card, mobile money, TZS/USD.
+    Mobile Money is detected from the payment_method field — never guessed.
+    """
     current_user_id = int(get_jwt_identity())
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
 
-    booking_id      = data.get('booking_id')
-    payment_method  = data.get('payment_method', 'card')
-    currency        = data.get('currency', 'USD').upper()
-    phone_number    = data.get('phone_number', '')
-    check_in_date   = data.get('check_in_date', '') or data.get('scheduled_date', '')
-    check_out_date  = data.get('check_out_date', '')   # For accommodation / guide
-    num_units       = int(data.get('num_guests', 1))   # nights/days/guests
+    booking_id     = data.get("booking_id")
+    payment_method = str(data.get("payment_method", "card")).lower().strip()
+    currency       = str(data.get("currency", "USD")).upper().strip()
+    phone_number   = str(data.get("phone_number", "")).strip()
 
+    # ── Input validation ───────────────────────────────────────────────────
     if not booking_id:
-        return jsonify({'status': 'error', 'message': 'booking_id is required'}), 400
-    if not check_in_date:
-        return jsonify({'status': 'error', 'message': 'Please select your trip start date.'}), 400
+        return jsonify({"status": "error", "message": "booking_id is required"}), 400
+
+    if payment_method not in ("card", "mobile_money"):
+        return jsonify({"status": "error",
+                        "message": "payment_method must be 'card' or 'mobile_money'"}), 400
+
+    if currency not in ("USD", "TZS"):
+        return jsonify({"status": "error",
+                        "message": "currency must be 'USD' or 'TZS'"}), 400
+
+    if payment_method == "mobile_money" and not phone_number:
+        return jsonify({"status": "error",
+                        "message": "phone_number is required for mobile money"}), 400
 
     booking = Booking.query.filter_by(id=booking_id, user_id=current_user_id).first()
     if not booking:
-        return jsonify({'status': 'error', 'message': 'Booking not found or session expired. Please refresh.'}), 404
-    if booking.status not in ('pending',):
-        return jsonify({'status': 'error', 'message': 'This booking has already been processed.'}), 400
-    if payment_method == 'mobile_money' and not phone_number:
-        return jsonify({'status': 'error', 'message': 'Phone number is required for Mobile Money.'}), 400
-
-    user = db.session.get(User, current_user_id)
-    if not user:
-        return jsonify({'status': 'error', 'message': 'User not found'}), 404
-
-    # ── Parse dates ────────────────────────────────────────────────────────
-    from datetime import datetime as _dt, timedelta as _td
-    try:
-        checkin_obj  = _dt.strptime(check_in_date, '%Y-%m-%d').date()
-    except (ValueError, TypeError):
-        return jsonify({'status': 'error', 'message': 'Invalid check-in date format.'}), 400
-
-    # For accommodation/guide: compute nights/days from date range
-    if check_out_date and booking.item_type in ('accommodation', 'guide'):
-        try:
-            checkout_obj = _dt.strptime(check_out_date, '%Y-%m-%d').date()
-            nights = (checkout_obj - checkin_obj).days
-            if nights < 1:
-                return jsonify({'status': 'error', 'message': 'Check-out must be after check-in.'}), 400
-            num_units = nights
-        except (ValueError, TypeError):
-            return jsonify({'status': 'error', 'message': 'Invalid check-out date format.'}), 400
-
-    # ── Persist trip details on booking (without changing amount_usd unit price) ─
-    booking.scheduled_date = checkin_obj
-    booking.num_guests     = num_units
-    # Do NOT mutate amount_usd — it is the unit price (per night/day/person)
-    # Compute total only for Flutterwave charge
-    unit_price    = float(booking.amount_usd)
-    total_usd     = round(unit_price * num_units, 2)
+        return jsonify({"status": "error", "message": "Booking not found"}), 404
+    if booking.status != "pending":
+        return jsonify({"status": "error",
+                        "message": f"Booking is already {booking.status}"}), 400
 
     # ── Currency conversion ────────────────────────────────────────────────
-    amount_for_charge = total_usd
+    amount_usd        = float(booking.amount_usd)
+    amount_for_charge = amount_usd
     tzs_amount        = None
-    if currency == 'TZS':
-        rate_data         = _get_tzs_rate_internal()
-        rate              = rate_data.get('rate', 2650.0)
-        tzs_amount        = round(total_usd * rate, 2)
+
+    if currency == "TZS":
+        from flask import current_app
+        rate_resp = get_tzs_rate()
+        rate_data = rate_resp.get_json()
+        rate      = float(rate_data.get("rate", 2650.0))
+        tzs_amount        = round(amount_usd * rate, 2)
         amount_for_charge = tzs_amount
 
-    tx_ref       = f"saf-{booking.id}-{''.join(random.choices(string.ascii_lowercase + string.digits, k=8))}"
-    redirect_url = url_for('payment_callback', _external=True)
+    # ── Unique transaction reference ───────────────────────────────────────
+    import random, string
+    tx_ref = (
+        f"saf-{booking.id}-"
+        f"{''.join(random.choices(string.ascii_lowercase + string.digits, k=8))}"
+    )
+
+    # ── Build Flutterwave payload ──────────────────────────────────────────
+    tourist = db.session.get(User, current_user_id)
 
     payload = {
-        'tx_ref':       tx_ref,
-        'amount':       amount_for_charge,
-        'currency':     currency,
-        'redirect_url': redirect_url,
-        'customer':     {'email': user.email, 'name': user.username},
-        'meta':         {'booking_id': booking.id, 'payment_method': payment_method, 'currency': currency},
-        'customizations': {
-            'title':       'SafaraOne',
-            'description': f"Booking: {booking.item_name or 'Trip'} ({num_units} {'night(s)' if booking.item_type == 'accommodation' else 'day(s)' if booking.item_type == 'guide' else 'guest(s)'})",
-            'logo':        'https://safaraone.onrender.com/static/img/logo.png',
+        "tx_ref":       tx_ref,
+        "amount":       amount_for_charge,
+        "currency":     currency,
+        "redirect_url": url_for("payment_callback", _external=True),
+        "customer": {
+            "email":       tourist.email if tourist else "",
+            "name":        tourist.username if tourist else "Tourist",
+            "phonenumber": phone_number if phone_number else "",
+        },
+        "meta": {
+            "booking_id":     booking.id,
+            "payment_method": payment_method,
+            "currency":       currency,
+        },
+        "customizations": {
+            "title":       "SafaraOne",
+            "description": f"Booking: {booking.item_name or 'Trip'}",
+            "logo":        "https://safaraone.com/static/img/logo.png",
         },
     }
-    if payment_method == 'mobile_money':
-        payload['payment_options'] = 'mobilemoneytanzania'
-        payload['customer']['phonenumber'] = phone_number
-    else:
-        payload['payment_options'] = 'card'
 
-    flw_secret = os.environ.get('FLW_SECRET_KEY', '')
+    # ── OBJECTIVE 1 FIX: explicit payment_options routing ─────────────────
+    if payment_method == "mobile_money":
+        payload["payment_options"] = "mobilemoneytanzania"
+        # Flutterwave requires phone in customer block AND meta for mobile money
+        payload["meta"]["phone_number"] = phone_number
+    else:
+        payload["payment_options"] = "card"
+    # No ambiguity — always one of exactly two values, never inferred.
+
+    # ── Call Flutterwave ───────────────────────────────────────────────────
+    flw_secret = os.environ.get("FLW_SECRET_KEY", "")
     try:
+        import requests
         resp   = requests.post(
-            'https://api.flutterwave.com/v3/payments',
+            "https://api.flutterwave.com/v3/payments",
             json=payload,
-            headers={'Authorization': f'Bearer {flw_secret}'},
-            timeout=12,
+            headers={"Authorization": f"Bearer {flw_secret}"},
+            timeout=10,
         )
         result = resp.json()
 
-        if result.get('status') == 'success':
-            # Only now save FLW ref and currency — do NOT change amount_usd
+        if result.get("status") == "success":
             booking.tx_ref         = tx_ref
             booking.currency       = currency
             booking.tzs_amount     = tzs_amount
             booking.payment_method = payment_method
             db.session.commit()
-            return jsonify({'status': 'success', 'session_url': result['data']['link'], 'tx_ref': tx_ref})
-        else:
-            # ⚠️ Do NOT delete the booking — keep as pending so user can retry
-            db.session.rollback()
-            flw_msg = result.get('message', 'Payment gateway error. Please check your keys.')
-            app.logger.error(f'[CHECKOUT] FLW error: {flw_msg} | payload: {payload}')
-            return jsonify({'status': 'error', 'message': f'Payment gateway: {flw_msg}'}), 502
+
+            return jsonify({
+                "status":      "success",
+                "session_url": result["data"]["link"],
+                "tx_ref":      tx_ref,
+            })
+
+        # Flutterwave returned an error — keep pending booking for retry
+        app.logger.error(f"[CHECKOUT] Flutterwave error: {result}")
+        return jsonify({"status": "error",
+                        "message": result.get("message", "Payment gateway error. Please try again.")}), 502
 
     except requests.exceptions.Timeout:
-        db.session.rollback()
-        return jsonify({'status': 'error', 'message': 'Payment gateway timed out. Please try again.'}), 504
+        return jsonify({"status": "error",
+                        "message": "Payment gateway timed out. Please try again."}), 504
+
     except Exception as e:
-        db.session.rollback()
-        app.logger.error(f'[CHECKOUT] Unexpected error: {e}')
-        return jsonify({'status': 'error', 'message': f'Unexpected error: {str(e)}'}), 500
+        app.logger.error(f"[CHECKOUT] Unexpected error: {e}")
+        return jsonify({"status": "error", "message": "An unexpected error occurred."}), 500
 
 
 
@@ -1637,9 +1799,16 @@ def payment_callback():
             return redirect(url_for('payment_cancel_page'))
 
         verified = result['data']
-        expected = booking.tzs_amount if booking.currency == 'TZS' else booking.amount_usd
-        if abs(float(verified.get('amount', 0)) - expected) > 1:
-            app.logger.warning(f'[CALLBACK] Amount mismatch for {tx_ref}')
+        # Compare against the TOTAL charged (unit_price × num_units), not just unit_price
+        units    = max(int(getattr(booking, 'num_guests', 1) or 1), 1)
+        unit_price = float(booking.amount_usd)
+        if booking.currency == 'TZS' and booking.tzs_amount:
+            expected = float(booking.tzs_amount)
+        else:
+            expected = round(unit_price * units, 2)
+        actual = float(verified.get('amount', 0))
+        if abs(actual - expected) > max(1.0, expected * 0.02):   # allow 2% tolerance
+            app.logger.warning(f'[CALLBACK] Amount mismatch for {tx_ref}: expected={expected} got={actual}')
             return redirect(url_for('payment_cancel_page'))
     except Exception as e:
         app.logger.error(f'[CALLBACK] Verify exception for {tx_ref}: {e}')
@@ -1650,25 +1819,59 @@ def payment_callback():
     booking.tx_id  = str(trans_id)
     db.session.commit()
 
-    # Phase 8: initiate escrow + send booking confirmed notification
-    try:
-        if booking.item_type == 'guide':
-            guide_obj  = db.session.get(Guide, booking.item_id)
-            guide_user = User.query.get(guide_obj.user_id) if guide_obj else None
-            guide_sub  = getattr(guide_user, 'flw_sub_account_id', None) if guide_user else None
-            initiate_escrow(booking, guide_sub)
-    except Exception as _esc_err:
-        app.logger.error(f'[ESCROW] Initiation failed for booking #{booking.id}: {_esc_err}')
+    # ── OBJECTIVE 2B: Notifications after payment confirmed ────────────────
+    # Determine booking type: instant (confirmed) or request (pending approval)
+    owner = get_item_owner(booking.item_type, booking.item_id)
+    tourist = db.session.get(User, booking.user_id)
 
-    try:
-        tourist_obj  = db.session.get(User, booking.user_id)
-        guide_notify = None
-        if booking.item_type == 'guide':
-            _g = db.session.get(Guide, booking.item_id)
-            guide_notify = User.query.get(_g.user_id) if _g else None
-        notify_booking_confirmed(booking, guide_notify)
-    except Exception as _n_err:
-        app.logger.error(f'[NOTIFY] Booking confirmed notification failed: {_n_err}')
+    # Note: Use internal 'booking_type' if present, otherwise default to instant for guides
+    booking_type = getattr(booking, 'booking_type', 'instant') or 'instant'
+    if booking.item_type == 'guide':
+        booking_type = 'instant'
+
+    if booking_type == "instant":
+        # Instant bookings confirm immediately
+        try:
+            notify_booking_confirmed(booking, guide_user=owner)
+        except Exception as _notif_err:
+            app.logger.error(f"[CALLBACK] notify_booking_confirmed failed: {_notif_err}")
+    else:
+        # Request bookings — tourist is told it's pending, owner is told to review
+        try:
+            if tourist:
+                notify(
+                    user_id    = tourist.id,
+                    notif_type = "booking_confirmed",
+                    title      = "Booking Request Sent ⏳",
+                    message    = (
+                        f"Your payment for {booking.item_name or 'your booking'} is secured. "
+                        f"The host will confirm within 24 hours."
+                    ),
+                    link = "/my-trips",
+                )
+            if owner:
+                notify(
+                    user_id    = owner.id,
+                    notif_type = "booking_confirmed",
+                    title      = "New Booking Request 📋",
+                    message    = (
+                        f"A tourist is requesting to book {booking.item_name or 'your listing'} "
+                        f"for {booking.scheduled_date.strftime('%b %d, %Y') if booking.scheduled_date else 'an upcoming date'}. "
+                        f"Please review and approve within 24 hours."
+                    ),
+                    link = "/host/dashboard",
+                )
+        except Exception as _notif_err:
+            app.logger.error(f"[CALLBACK] request-booking notify failed: {_notif_err}")
+
+    # Phase 8: initiate escrow for guide bookings
+    if booking.item_type == "guide" and owner:
+        try:
+            from services.escrow_service import initiate_escrow
+            guide_sub_account = getattr(owner, "flw_sub_account_id", None)
+            initiate_escrow(booking, guide_sub_account)
+        except Exception as _escrow_err:
+            app.logger.error(f"[CALLBACK] initiate_escrow failed booking #{booking.id}: {_escrow_err}")
 
     # Send receipt email (best-effort)
     tourist = db.session.get(User, booking.user_id)
