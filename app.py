@@ -50,10 +50,8 @@ from services.kyc_service import (
     process_sumsub_webhook,
 )
 from services.email_service import (
-    send_receipt_email,
     send_booking_receipt,
     send_cancellation_email,
-    send_booking_request_email,
 )
 
 # Phase 7: In-memory FX rate cache (1-hour TTL)
