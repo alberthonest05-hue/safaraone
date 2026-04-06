@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 # Phase 2: Load environment variables FIRST before importing models/services
 load_dotenv()
 
-from extensions import db   # db from extensions — no circular import
+from extensions import db, jwt  # db + jwt from extensions — no circular import
 from models import User, Destination, Accommodation, Experience, Guide, Booking, Review, \
     Availability, Notification, EscrowTransaction, PricingRule, CommissionLedger, KYCRecord, GuideVideo
 from sqlalchemy import distinct
