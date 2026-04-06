@@ -1711,12 +1711,7 @@ def payment_callback():
         app.logger.error(f'[CALLBACK] Verify exception for {tx_ref}: {e}')
         return redirect(url_for('payment_cancel_page'))
 
-    # Confirm booking
-    booking.status = 'confirmed'
-    booking.tx_id  = str(trans_id)
-    db.session.commit()
-
-    # ── OBJECTIVE 2B: Notifications after payment confirmed ────────────────
+    # ── OBJECTIVE 2B: Determine booking type BEFORE status change ────────────────
     # Determine booking type: instant (confirmed) or request (pending approval)
     owner = get_item_owner(booking.item_type, booking.item_id)
     tourist = db.session.get(User, booking.user_id)
@@ -1725,9 +1720,23 @@ def payment_callback():
     booking_type = getattr(booking, 'booking_type', 'instant') or 'instant'
     if booking.item_type == 'guide':
         booking_type = 'instant'
+    elif booking.item_type in ['accommodation', 'stay', 'experience']:
+        booking_type = 'request'
 
+    # Set status based on booking type
     if booking_type == "instant":
         # Instant bookings confirm immediately
+        booking.status = 'confirmed'
+    else:
+        # Request bookings stay pending until host approval
+        booking.status = 'pending'
+
+    booking.tx_id  = str(trans_id)
+    db.session.commit()
+
+    # Send appropriate notifications based on booking type
+    if booking_type == "instant":
+        # Instant bookings - send confirmation immediately
         try:
             notify_booking_confirmed(booking, guide_user=owner)
         except Exception as _notif_err:
@@ -1742,7 +1751,7 @@ def payment_callback():
                     title      = "Booking Request Sent ⏳",
                     message    = (
                         f"Your payment for {booking.item_name or 'your booking'} is secured. "
-                        f"The host will confirm within 24 hours."
+                        f"The host will confirm within 1 hour."
                     ),
                     link = "/my-trips",
                 )
@@ -1754,7 +1763,7 @@ def payment_callback():
                     message    = (
                         f"A tourist is requesting to book {booking.item_name or 'your listing'} "
                         f"for {booking.scheduled_date.strftime('%b %d, %Y') if booking.scheduled_date else 'an upcoming date'}. "
-                        f"Please review and approve within 24 hours."
+                        f"Please review and approve within 1 hour."
                     ),
                     link = "/host/dashboard",
                 )
@@ -2691,11 +2700,11 @@ def get_guide_booking_type(guide_id):
     return jsonify({
         "status":       "success",
         "booking_type": booking_type,
-        "label":        "Instant Confirmation" if booking_type == "instant" else "Awaiting Approval (24hr)",
+        "label":        "Instant Confirmation" if booking_type == "instant" else "Awaiting Approval (1hr)",
         "description":  (
             "Your booking will be confirmed immediately after payment."
             if booking_type == "instant"
-            else "The guide will review your request and confirm within 24 hours of payment."
+            else "The guide will review your request and confirm within 1 hour of payment."
         ),
     })
 
