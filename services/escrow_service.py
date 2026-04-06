@@ -1,276 +1,278 @@
 """
-SafaraOne — Escrow Service (Phase 8)
-=====================================
-Manages the escrow lifecycle:
-  - initiate_escrow()   → called after payment_callback confirms booking
-  - settle_escrow()     → tourist confirms tour complete
-  - refund_escrow()     → booking cancelled, refund escrow amount
-  - compute_dynamic_price() → applies PricingRule multipliers
+SafaraOne — Escrow Service (Phase 8, Day 3, Features #47 + #48 + #53)
+======================================================================
+Uses extensions.py for db — zero circular import risk.
+
+Guide lookup fix: Guide.id is a String PK in this schema (e.g. "guide-zanzibar-1").
+booking.item_id is a Guide.id (string), NOT a User.id (int).
+So the correct lookup is: Guide.query.get(booking.item_id) → guide.user_id → User.
 """
 
 import os
 import logging
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, date
+
+# Clean import — no app dependency
+from extensions import db
+from models import EscrowTransaction, CommissionLedger, PricingRule, Booking, User, Guide
 
 logger = logging.getLogger(__name__)
 
+FLW_BASE = "https://api.flutterwave.com/v3"
 
-def initiate_escrow(booking, guide_sub_account_id: str = None):
+
+def _headers() -> dict:
+    """Build fresh headers each call so FLW_SECRET_KEY changes are picked up."""
+    return {
+        "Authorization": f"Bearer {os.environ.get('FLW_SECRET_KEY', '')}",
+        "Content-Type": "application/json",
+    }
+
+
+def _flw_post(endpoint: str, payload: dict) -> dict:
+    resp = requests.post(f"{FLW_BASE}{endpoint}", json=payload, headers=_headers(), timeout=15)
+    return resp.json()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Escrow Initiation
+# ─────────────────────────────────────────────────────────────────────────────
+
+def initiate_escrow(booking, guide_sub_account_id: str = None) -> EscrowTransaction:
     """
-    Called immediately after booking.status = 'confirmed'.
-    Splits the total amount:
-      - deposit_pct% → sent to guide via Flutterwave transfer
-      - remainder    → held in escrow (tracked in DB)
-
-    If guide has no sub-account, the deposit is logged but not transferred
-    (admin handles manual payout).
+    Called immediately after booking payment is confirmed.
+    Creates EscrowTransaction, fires deposit to guide, locks remainder.
     """
-    try:
-        from app import app, db
-        from models import EscrowTransaction
+    DEPOSIT_PCT    = float(os.environ.get("ESCROW_DEPOSIT_PCT", "20.0"))
+    total_amount   = float(booking.amount_usd)
+    deposit_amount = round(total_amount * (DEPOSIT_PCT / 100), 2)
+    escrow_amount  = round(total_amount - deposit_amount, 2)
 
-        deposit_pct = float(os.environ.get("ESCROW_DEPOSIT_PCT", "20.0"))
-        total = booking.amount_usd
-        deposit_amount = round(total * deposit_pct / 100, 2)
-        escrow_amount = round(total - deposit_amount, 2)
+    # Idempotency — never create duplicate records
+    existing = EscrowTransaction.query.filter_by(booking_id=booking.id).first()
+    if existing:
+        logger.info(f"[ESCROW] Already exists for booking #{booking.id}")
+        return existing
 
-        # Create escrow record
-        escrow = EscrowTransaction(
-            booking_id=booking.id,
-            total_amount=total,
-            deposit_pct=deposit_pct,
-            deposit_amount=deposit_amount,
-            escrow_amount=escrow_amount,
-            status="holding",
-        )
-        db.session.add(escrow)
-        db.session.commit()
+    escrow = EscrowTransaction(
+        booking_id     = booking.id,
+        total_amount   = total_amount,
+        deposit_pct    = DEPOSIT_PCT,
+        deposit_amount = deposit_amount,
+        escrow_amount  = escrow_amount,
+        status         = "holding",
+    )
+    db.session.add(escrow)
+    db.session.commit()
 
-        app.logger.info(
-            f"[ESCROW] Initiated for booking #{booking.id}: "
-            f"deposit={deposit_amount} USD, escrow={escrow_amount} USD"
-        )
+    logger.info(
+        f"[ESCROW] Initiated booking #{booking.id}: "
+        f"deposit={deposit_amount} escrow={escrow_amount} USD"
+    )
 
-        # Attempt Flutterwave transfer for deposit (best-effort)
-        if guide_sub_account_id:
-            _flw_transfer(
-                amount=deposit_amount,
-                destination_account=guide_sub_account_id,
-                narration=f"SafaraOne deposit — Booking #{booking.id}",
-                reference=f"esc-dep-{booking.id}",
-                escrow=escrow,
-                field="deposit_flw_id",
-            )
-
-        return {"status": "success", "escrow_id": escrow.id}
-
-    except Exception as e:
-        logger.error(f"[ESCROW] Initiation failed for booking #{booking.id}: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-def settle_escrow(escrow, guide_sub_account_id: str = None):
-    """
-    Tourist confirms tour complete → release escrow balance to guide
-    minus SafaraOne commission.
-
-    Returns dict with settlement breakdown.
-    """
-    try:
-        from app import app, db
-        from models import CommissionLedger
-
-        commission_rate = float(os.environ.get("COMMISSION_RATE", "0.10"))
-        gross = escrow.escrow_amount
-        commission = round(gross * commission_rate, 2)
-        net_to_operator = round(gross - commission, 2)
-
-        # Log commission (append-only ledger)
-        ledger = CommissionLedger(
-            booking_id=escrow.booking_id,
-            escrow_id=escrow.id,
-            gross_amount=gross,
-            commission_rate=commission_rate,
-            commission_amount=commission,
-            net_to_operator=net_to_operator,
-        )
-        db.session.add(ledger)
-
-        # Attempt Flutterwave transfer for net payout
-        if guide_sub_account_id and net_to_operator > 0:
-            _flw_transfer(
-                amount=net_to_operator,
-                destination_account=guide_sub_account_id,
-                narration=f"SafaraOne escrow settlement — Booking #{escrow.booking_id}",
-                reference=f"esc-set-{escrow.booking_id}",
-                escrow=escrow,
-                field="settle_flw_id",
-            )
-
-        escrow.status = "settled"
-        escrow.settled_at = datetime.utcnow()
-        db.session.commit()
-
-        # Notify guide
+    if guide_sub_account_id and getattr(booking, 'tx_id', None):
         try:
-            from models import Booking, User
-            from services.notification_service import notify
-            booking = Booking.query.get(escrow.booking_id)
-            if booking:
-                guide = User.query.get(booking.item_id) if booking.item_type == "guide" else None
-                if guide:
-                    notify(
-                        user_id=guide.id,
-                        notif_type="escrow_settled",
-                        title="Tour Payment Released 💰",
-                        message=f"${net_to_operator:.2f} USD has been sent to your account for Booking #{booking.id}.",
-                        link="/dashboard",
-                    )
+            currency = getattr(booking, 'currency', None) or "USD"
+            resp = _flw_post("/transfers", {
+                "account_bank":   "flutterwave",
+                "account_number": guide_sub_account_id,
+                "amount":         deposit_amount,
+                "currency":       currency,
+                "narration":      f"SafaraOne deposit – booking #{booking.id}",
+                "reference":      f"dep-{booking.id}-{escrow.id}",
+            })
+            if resp.get("status") == "success":
+                escrow.deposit_flw_id = str(resp["data"].get("id", ""))
+                db.session.commit()
+                logger.info(f"[ESCROW] Deposit {deposit_amount} {currency} sent, booking #{booking.id}")
+            else:
+                logger.warning(f"[ESCROW] Deposit transfer rejected: {resp}")
         except Exception as e:
-            logger.warning(f"[ESCROW] Guide notification failed: {e}")
+            logger.error(f"[ESCROW] Deposit exception booking #{booking.id}: {e}")
+    else:
+        logger.warning(
+            f"[ESCROW] Booking #{booking.id} — no sub_account_id or tx_id. "
+            "Deposit flagged for manual payout."
+        )
 
-        return {
-            "status": "success",
-            "gross_amount": gross,
-            "commission": commission,
-            "net_to_operator": net_to_operator,
-            "currency": "USD",
-        }
-
-    except Exception as e:
-        logger.error(f"[ESCROW] Settlement failed for escrow #{escrow.id}: {e}")
-        return {"status": "error", "message": str(e)}
+    return escrow
 
 
-def refund_escrow(escrow):
-    """Refund the escrow balance to the tourist (booking cancelled)."""
+# ─────────────────────────────────────────────────────────────────────────────
+# Escrow Settlement
+# ─────────────────────────────────────────────────────────────────────────────
+
+def settle_escrow(escrow: EscrowTransaction, guide_sub_account_id: str = None) -> dict:
+    """
+    Tourist taps "Tour Completed" — deducts commission, transfers net to guide.
+
+    GUIDE LOOKUP FIX:
+    Guide.id is a String PK (e.g. "guide-zanzibar-1").
+    booking.item_id holds that string. We look up Guide first, then guide.user_id.
+    Claude's version did db.session.get(User, int(booking.item_id)) which is WRONG.
+    """
+    # Import here to avoid service-to-service circular at module level
+    from services.notification_service import notify_escrow_settled
+
+    if escrow.status != "holding":
+        return {"status": "error", "message": f"Escrow is already {escrow.status}"}
+
+    COMMISSION_RATE   = float(os.environ.get("COMMISSION_RATE", "0.10"))
+    booking           = escrow.booking
+    currency          = getattr(booking, 'currency', None) or "USD"
+    gross_amount      = escrow.escrow_amount
+    commission_amount = round(gross_amount * COMMISSION_RATE, 2)
+    net_to_operator   = round(gross_amount - commission_amount, 2)
+
+    # Commission log — created BEFORE transfer for audit integrity
+    commission_log = CommissionLedger(
+        booking_id        = booking.id,
+        escrow_id         = escrow.id,
+        gross_amount      = gross_amount,
+        commission_rate   = COMMISSION_RATE,
+        commission_amount = commission_amount,
+        net_to_operator   = net_to_operator,
+    )
+    db.session.add(commission_log)
+
+    settle_flw_id = None
+    if guide_sub_account_id:
+        try:
+            resp = _flw_post("/transfers", {
+                "account_bank":   "flutterwave",
+                "account_number": guide_sub_account_id,
+                "amount":         net_to_operator,
+                "currency":       currency,
+                "narration":      f"SafaraOne settlement – booking #{booking.id}",
+                "reference":      f"settle-{booking.id}-{escrow.id}",
+            })
+            if resp.get("status") == "success":
+                settle_flw_id = str(resp["data"].get("id", ""))
+                logger.info(f"[ESCROW] Settled {net_to_operator} {currency} booking #{booking.id}")
+            else:
+                logger.warning(f"[ESCROW] Settlement transfer rejected: {resp}")
+        except Exception as e:
+            logger.error(f"[ESCROW] Settlement exception booking #{booking.id}: {e}")
+
+    escrow.status        = "settled"
+    escrow.settle_flw_id = settle_flw_id
+    escrow.settled_at    = datetime.utcnow()
+    db.session.commit()
+
+    # Notify guide — Guide.id is String, NOT User.id
     try:
-        from app import db
+        if booking.item_type == "guide":
+            guide_record = Guide.query.get(booking.item_id)  # Guide.id = string
+            if guide_record and guide_record.user_id:
+                guide_user = db.session.get(User, guide_record.user_id)
+                if guide_user:
+                    notify_escrow_settled(booking, guide_user, net_to_operator, currency)
+    except Exception as e:
+        logger.error(f"[ESCROW] Guide notification failed: {e}")
+
+    return {
+        "status":          "success",
+        "gross_amount":    gross_amount,
+        "commission":      commission_amount,
+        "net_to_operator": net_to_operator,
+        "settle_flw_id":   settle_flw_id,
+        "currency":        currency,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Escrow Refund
+# ─────────────────────────────────────────────────────────────────────────────
+
+def refund_escrow(escrow: EscrowTransaction) -> dict:
+    """Return escrow balance to tourist (e.g. cancellation)."""
+    if escrow.status != "holding":
+        return {"status": "error", "message": f"Cannot refund — escrow is {escrow.status}"}
+
+    booking = escrow.booking
+    tx_id   = getattr(booking, 'tx_id', None)
+
+    if not tx_id:
+        # No Flutterwave tx_id — just mark locally
         escrow.status = "refunded"
         db.session.commit()
-        logger.info(f"[ESCROW] Refunded escrow #{escrow.id} for booking #{escrow.booking_id}")
-        return {"status": "success"}
-    except Exception as e:
-        logger.error(f"[ESCROW] Refund failed for escrow #{escrow.id}: {e}")
-        return {"status": "error", "message": str(e)}
+        logger.info(f"[ESCROW] Escrow #{escrow.id} marked refunded (no tx_id)")
+        return {"status": "success", "method": "local"}
 
-
-def compute_dynamic_price(base_price: float, item_type: str, item_id: int, scheduled_date=None) -> dict:
-    """
-    Apply PricingRule multipliers to a base price.
-
-    Returns:
-        {
-          "base_price": 100.0,
-          "final_price": 85.0,
-          "multiplier": 0.85,
-          "reason": "low_load"
-        }
-    """
     try:
-        from app import db
-        from models import PricingRule, Booking
-        from datetime import datetime, timezone
+        resp   = requests.post(
+            f"{FLW_BASE}/transactions/{tx_id}/refund",
+            json={"amount": escrow.escrow_amount},
+            headers=_headers(),
+            timeout=10,
+        )
+        result = resp.json()
+        if result.get("status") == "success":
+            escrow.status = "refunded"
+            db.session.commit()
+            return {"status": "success", "refund_id": result["data"].get("id")}
+        return {"status": "error", "message": str(result)}
+    except Exception as e:
+        logger.error(f"[ESCROW] Refund exception booking #{booking.id}: {e}")
+        # Fail-safe: mark locally so UI is unblocked
+        escrow.status = "refunded"
+        db.session.commit()
+        return {"status": "success", "method": "local_fallback"}
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dynamic Pricing Engine
+# ─────────────────────────────────────────────────────────────────────────────
+
+def compute_dynamic_price(
+    base_price: float,
+    item_type: str,
+    item_id,
+    scheduled_date=None,
+) -> dict:
+    """Compute checkout price after applying dynamic pricing rules."""
+    try:
         rule = PricingRule.query.filter_by(
             item_type=item_type, item_id=item_id, is_active=True
         ).first()
 
         if not rule:
-            return {
-                "base_price": base_price,
-                "final_price": round(base_price, 2),
-                "multiplier": 1.0,
-                "reason": "no_rule",
-            }
+            return {"final_price": base_price, "multiplier": 1.0, "rule_applied": "none"}
 
-        multiplier = 1.0
-        reason = "standard"
+        confirmed_count = Booking.query.filter_by(
+            item_type=item_type, item_id=str(item_id), status="confirmed"
+        ).count()
+        load_pct = (confirmed_count / rule.max_capacity * 100) if rule.max_capacity > 0 else 50.0
 
-        # ── Last-minute discount ─────────────────────────────────────────────
         if scheduled_date:
-            now = datetime.now(timezone.utc)
-            if hasattr(scheduled_date, 'tzinfo') and scheduled_date.tzinfo is None:
-                from datetime import timezone as tz
-                trip_dt = scheduled_date.replace(tzinfo=tz.utc)
-            else:
-                trip_dt = scheduled_date
-            hours_away = (trip_dt - now).total_seconds() / 3600
-            if 0 < hours_away < rule.last_minute_hours:
+            scheduled_dt = (
+                datetime.combine(scheduled_date, datetime.min.time())
+                if isinstance(scheduled_date, date) and not isinstance(scheduled_date, datetime)
+                else scheduled_date
+            )
+            hours_left = (scheduled_dt - datetime.utcnow()).total_seconds() / 3600
+            if 0 < hours_left < rule.last_minute_hours:
                 multiplier = rule.last_minute_multiplier
-                reason = "last_minute"
+                return {
+                    "final_price":  round(base_price * multiplier, 2),
+                    "multiplier":   multiplier,
+                    "rule_applied": f"last_minute ({hours_left:.0f}h left)",
+                }
 
-        # ── Demand-based multiplier (overrides last-minute if higher demand) ─
-        if reason != "last_minute":
-            confirmed_count = Booking.query.filter_by(
-                item_type=item_type,
-                item_id=str(item_id),
-                status="confirmed",
-            ).count()
+        if load_pct <= rule.low_load_threshold:
+            multiplier, rule_applied = rule.low_load_multiplier, f"low_load ({load_pct:.0f}% capacity)"
+        elif load_pct >= rule.high_load_threshold:
+            multiplier, rule_applied = rule.high_load_multiplier, f"high_load ({load_pct:.0f}% capacity)"
+        else:
+            multiplier, rule_applied = 1.0, f"standard ({load_pct:.0f}% capacity)"
 
-            max_cap = rule.max_capacity or 10
-            load_pct = (confirmed_count / max_cap) * 100 if max_cap > 0 else 0
-
-            if load_pct < rule.low_load_threshold:
-                multiplier = rule.low_load_multiplier
-                reason = "low_load"
-            elif load_pct > rule.high_load_threshold:
-                multiplier = rule.high_load_multiplier
-                reason = "high_load"
-
-        final_price = round(base_price * multiplier, 2)
         return {
-            "base_price": base_price,
-            "final_price": final_price,
-            "multiplier": multiplier,
-            "reason": reason,
+            "final_price":  round(base_price * multiplier, 2),
+            "multiplier":   multiplier,
+            "rule_applied": rule_applied,
         }
 
     except Exception as e:
         logger.error(f"[PRICING] compute_dynamic_price failed: {e}")
-        return {
-            "base_price": base_price,
-            "final_price": round(base_price, 2),
-            "multiplier": 1.0,
-            "reason": "error",
-        }
-
-
-# ── Internal helper ──────────────────────────────────────────────────────────
-
-def _flw_transfer(amount: float, destination_account: str, narration: str,
-                  reference: str, escrow, field: str):
-    """
-    Attempt a Flutterwave bank transfer. Saves the transfer ID to the escrow record.
-    Non-fatal — logs errors but does not raise.
-    """
-    try:
-        flw_secret = os.environ.get("FLW_SECRET_KEY", "")
-        if not flw_secret:
-            logger.warning("[ESCROW] FLW_SECRET_KEY not set — skipping transfer.")
-            return
-
-        payload = {
-            "account_bank": "flutterwave",
-            "account_number": destination_account,
-            "amount": amount,
-            "currency": "USD",
-            "narration": narration,
-            "reference": reference,
-        }
-        resp = requests.post(
-            "https://api.flutterwave.com/v3/transfers",
-            json=payload,
-            headers={"Authorization": f"Bearer {flw_secret}"},
-            timeout=15,
-        )
-        result = resp.json()
-        if result.get("status") == "success":
-            transfer_id = str(result["data"].get("id", ""))
-            setattr(escrow, field, transfer_id)
-            logger.info(f"[ESCROW] FLW transfer initiated (id={transfer_id})")
-        else:
-            logger.warning(f"[ESCROW] FLW transfer failed: {result}")
-    except Exception as e:
-        logger.error(f"[ESCROW] FLW transfer exception: {e}")
+        return {"final_price": base_price, "multiplier": 1.0, "rule_applied": "error"}

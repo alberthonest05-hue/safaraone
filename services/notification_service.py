@@ -1,157 +1,181 @@
 """
-SafaraOne — Notification Service (Phase 8)
-==========================================
-Handles in-app notifications + optional FCM push notifications.
-Falls back gracefully when Firebase is not configured.
+SafaraOne — Notification Service (Phase 8, Day 2, Feature #80)
+==============================================================
+Creates in-app notifications (stored in DB) and dispatches
+Firebase Cloud Messaging (FCM) push notifications.
+
+Uses extensions.py for db — zero circular import risk.
 """
 
 import os
-import json
 import logging
-from datetime import datetime
+
+# Clean import — no app dependency whatsoever
+from extensions import db
+from models import Notification
 
 logger = logging.getLogger(__name__)
 
+FIREBASE_ENABLED = bool(os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON"))
+_fcm_app = None
 
-def _get_firebase_app():
-    """Lazy-initialise Firebase Admin SDK. Returns None if not configured."""
+
+def _get_fcm():
+    global _fcm_app
+    if _fcm_app is not None:
+        return _fcm_app
+    if not FIREBASE_ENABLED:
+        return None
     try:
         import firebase_admin
         from firebase_admin import credentials
+        import json
         if not firebase_admin._apps:
-            creds_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "")
-            if not creds_json:
-                return None
-            cred = credentials.Certificate(json.loads(creds_json))
-            firebase_admin.initialize_app(cred)
-        return firebase_admin.get_app()
+            sa_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "{}")
+            cred = credentials.Certificate(json.loads(sa_json))
+            _fcm_app = firebase_admin.initialize_app(cred)
+        else:
+            _fcm_app = firebase_admin.get_app()
+        return _fcm_app
     except Exception as e:
-        logger.warning(f"[FCM] Firebase init failed (stub mode): {e}")
+        logger.error(f"[FCM] Firebase init failed: {e}")
         return None
 
 
-def _send_fcm_push(user_id: int, title: str, body: str, link: str = None):
-    """
-    Send a Firebase Cloud Messaging push notification to all registered tokens
-    for the given user. Silent failure if Firebase is not configured.
-    """
+def _dispatch_fcm(user_id: int, title: str, message: str, link: str = None):
+    """Fire-and-forget FCM push. Never raises."""
+    app_obj = _get_fcm()
+    if not app_obj:
+        return
     try:
         from firebase_admin import messaging
-        app = _get_firebase_app()
-        if not app:
-            return  # FCM not configured — skip silently
-
-        # Import here to avoid circular imports
-        from app import app as flask_app, db
-        from models import UserFCMToken
-        with flask_app.app_context():
-            tokens = UserFCMToken.query.filter_by(user_id=user_id).all()
-            for t in tokens:
-                try:
-                    message = messaging.Message(
-                        notification=messaging.Notification(title=title, body=body),
-                        data={"link": link or ""},
-                        token=t.token,
-                    )
-                    messaging.send(message)
-                except Exception as e:
-                    logger.warning(f"[FCM] Push failed for token {t.token[:20]}…: {e}")
+        try:
+            from models import UserFCMToken
+            tokens = [t.token for t in UserFCMToken.query.filter_by(user_id=user_id).all()]
+        except Exception:
+            tokens = []
+        if not tokens:
+            return
+        msg = messaging.MulticastMessage(
+            tokens=tokens,
+            notification=messaging.Notification(title=title, body=message),
+            data={"link": link or "/"} if link else {},
+            android=messaging.AndroidConfig(priority="high"),
+            apns=messaging.APNSConfig(
+                payload=messaging.APNSPayload(aps=messaging.Aps(sound="default"))
+            ),
+        )
+        response = messaging.send_each_for_multicast(msg)
+        logger.info(f"[FCM] user={user_id} ok={response.success_count} fail={response.failure_count}")
     except Exception as e:
-        logger.warning(f"[FCM] Push notification failed: {e}")
+        logger.error(f"[FCM] Dispatch error user={user_id}: {e}")
 
 
-def notify(user_id: int, notif_type: str, title: str, message: str, link: str = None):
+def notify(user_id: int, notif_type: str, title: str, message: str, link: str = None) -> bool:
     """
-    Create an in-app Notification record and optionally fire FCM push.
-
-    Usage:
-        notify(user_id=3, notif_type="booking_confirmed",
-               title="Booking Confirmed", message="Your tour is booked!")
+    Create an in-app Notification record and optionally fire an FCM push.
+    Safe to call from any route or service — never raises.
+    Returns True if DB record was created, False on error.
     """
     try:
-        from app import db
-        from models import Notification
-
-        n = Notification(
+        notif = Notification(
             user_id=user_id,
             notif_type=notif_type,
             title=title,
             message=message,
             link=link,
         )
-        db.session.add(n)
+        db.session.add(notif)
         db.session.commit()
-
-        # Best-effort FCM push
-        _send_fcm_push(user_id, title, message, link)
-
+        logger.info(f"[NOTIFY] user={user_id} type={notif_type}: {title}")
+        _dispatch_fcm(user_id, title, message, link)
+        return True
     except Exception as e:
-        logger.error(f"[NOTIFY] Failed to save notification for user {user_id}: {e}")
+        logger.error(f"[NOTIFY] Failed for user={user_id}: {e}")
+        return False
 
 
-def notify_booking_confirmed(booking, guide=None):
-    """
-    Notify tourist that their booking is confirmed.
-    Optionally notify the guide of an incoming booking.
-    """
-    # Notify tourist
+# ── Convenience helpers ───────────────────────────────────────────────────────
+
+def notify_booking_confirmed(booking, guide_user=None):
     notify(
         user_id=booking.user_id,
         notif_type="booking_confirmed",
-        title="Booking Confirmed 🎉",
-        message=f"Your booking for {booking.item_name or 'your trip'} has been confirmed!",
-        link=f"/my-trips",
+        title="Booking Confirmed! ✅",
+        message=f"Your booking for {booking.item_name or 'your trip'} is confirmed.",
+        link="/my-trips",
+    )
+    if guide_user:
+        notify(
+            user_id=guide_user.id,
+            notif_type="booking_confirmed",
+            title="New Booking Received 🎉",
+            message=f"A tourist booked you for {booking.scheduled_date or 'an upcoming date'}.",
+            link="/dashboard/bookings",
+        )
+
+
+def notify_review_received(review, guide_user):
+    stars = "⭐" * review.rating
+    notify(
+        user_id=guide_user.id,
+        notif_type="review_received",
+        title=f"New Review {stars}",
+        message=f"A tourist left you a {review.rating}-star review.",
+        link="/dashboard",
     )
 
-    # Notify guide (if guide booking)
-    if guide:
-        try:
-            from datetime import date
-            trip_date = booking.scheduled_date.strftime('%b %d, %Y') if booking.scheduled_date else 'a coming date'
-            notify(
-                user_id=guide.id if hasattr(guide, 'id') else guide.user_id,
-                notif_type="booking_confirmed",
-                title="New Booking Received 📅",
-                message=f"You have a new confirmed booking for {trip_date}.",
-                link="/dashboard/bookings",
-            )
-        except Exception as e:
-            logger.error(f"[NOTIFY] Guide notification failed: {e}")
+
+def notify_escrow_settled(booking, guide_user, net_amount: float, currency: str = "USD"):
+    notify(
+        user_id=guide_user.id,
+        notif_type="escrow_settled",
+        title="Payment Released 💰",
+        message=f"{currency} {net_amount:.2f} sent to your account for booking #{booking.id}.",
+        link="/dashboard",
+    )
 
 
-def notify_review_received(review, recipient):
-    """
-    Notify a guide/host that they have received a new review.
-    `recipient` is the User object of the guide/host.
-    """
-    try:
-        stars = "⭐" * review.rating
-        notify(
-            user_id=recipient.id,
-            notif_type="review_received",
-            title="New Review Received",
-            message=f"You received a {review.rating}-star review. {stars}",
-            link="/dashboard",
-        )
-    except Exception as e:
-        logger.error(f"[NOTIFY] Review notification failed: {e}")
-
-
-def notify_kyc_result(guide, approved: bool, reason: str = None):
-    """Notify a guide of their KYC verification result."""
+def notify_kyc_result(guide_user, approved: bool, reason: str = None):
     if approved:
         notify(
-            user_id=guide.id,
+            user_id=guide_user.id,
             notif_type="kyc_approved",
             title="Identity Verified ✅",
-            message="Your identity has been verified. You are now fully discoverable on SafaraOne!",
+            message="Your ID has been verified. Your profile is now visible to tourists.",
             link="/dashboard",
         )
     else:
         notify(
-            user_id=guide.id,
+            user_id=guide_user.id,
             notif_type="kyc_rejected",
-            title="Verification Failed",
-            message=f"Your identity verification was not approved. Reason: {reason or 'Please contact support.'}",
+            title="Verification Failed ❌",
+            message=f"Verification not approved. Reason: {reason or 'Please contact support.'}",
             link="/dashboard/kyc",
+        )
+
+
+def notify_booking_cancelled(booking, cancelled_by: str = "tourist"):
+    """Fires cancellation notification to the other party."""
+    if cancelled_by == "tourist" and booking.item_type == "guide":
+        try:
+            from models import Guide
+            guide_record = Guide.query.get(booking.item_id)
+            if guide_record and guide_record.user_id:
+                notify(
+                    user_id=guide_record.user_id,
+                    notif_type="booking_cancelled",
+                    title="Booking Cancelled",
+                    message=f"Booking #{booking.id} has been cancelled by the tourist.",
+                    link="/dashboard/bookings",
+                )
+        except Exception as e:
+            logger.warning(f"[NOTIFY] Cancellation notify failed: {e}")
+    else:
+        notify(
+            user_id=booking.user_id,
+            notif_type="booking_cancelled",
+            title="Booking Cancelled",
+            message=f"Your booking #{booking.id} has been cancelled.",
+            link="/my-trips",
         )

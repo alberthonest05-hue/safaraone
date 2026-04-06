@@ -1,9 +1,7 @@
-from flask_sqlalchemy import SQLAlchemy
+from extensions import db  # Single source of truth — no circular import risk
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import json
-
-db = SQLAlchemy()
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -252,23 +250,30 @@ class Review(db.Model):
     """
     Phase 8 verified review — linked to a specific confirmed booking.
     One review per booking (unique constraint on booking_id).
+
+    FIX: Only ONE FK to User (tourist_id). The previous version had two FKs
+    to user.id which caused SQLAlchemy AmbiguousForeignKeysError.
+    user_id is now a plain property alias for tourist_id (backward compat).
     """
     __tablename__ = "review"
 
-    id          = db.Column(db.Integer, primary_key=True)
-    tourist_id  = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    # Legacy field — kept for backward-compat queries
-    user_id     = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
-    booking_id  = db.Column(db.Integer, db.ForeignKey("booking.id"), nullable=True, unique=True)
-    item_type   = db.Column(db.String(50), nullable=False)  # guide | accommodation | experience
-    item_id     = db.Column(db.String(50), nullable=False)
-    rating      = db.Column(db.Integer, nullable=False)     # 1–5
-    comment     = db.Column(db.Text, nullable=True)
-    is_visible  = db.Column(db.Boolean, default=True)       # admin can hide abusive reviews
-    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    id         = db.Column(db.Integer, primary_key=True)
+    tourist_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    booking_id = db.Column(db.Integer, db.ForeignKey("booking.id"), nullable=True, unique=True)
+    item_type  = db.Column(db.String(50), nullable=False)   # guide | accommodation | experience
+    item_id    = db.Column(db.String(50), nullable=False)
+    rating     = db.Column(db.Integer, nullable=False)      # 1–5
+    comment    = db.Column(db.Text, nullable=True)
+    is_visible = db.Column(db.Boolean, default=True)        # admin can hide abusive reviews
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    tourist     = db.relationship("User", foreign_keys=[tourist_id], backref="reviews", lazy=True)
-    booking     = db.relationship("Booking", backref="review", lazy=True, uselist=False)
+    tourist    = db.relationship("User", backref="reviews", lazy=True)
+    booking    = db.relationship("Booking", backref="review", lazy=True, uselist=False)
+
+    @property
+    def user_id(self):
+        """Backward-compat alias for tourist_id."""
+        return self.tourist_id
 
     def to_dict(self):
         tourist_name = "Anonymous"
@@ -279,7 +284,7 @@ class Review(db.Model):
         return {
             "id":           self.id,
             "tourist_id":   self.tourist_id,
-            "user_id":      self.user_id,
+            "user_id":      self.tourist_id,
             "tourist_name": tourist_name,
             "booking_id":   self.booking_id,
             "item_type":    self.item_type,

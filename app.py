@@ -16,11 +16,12 @@ from datetime import datetime, timedelta, timezone
 # Phase 2: Load environment variables FIRST before importing models/services
 load_dotenv()
 
-from models import db, User, Destination, Accommodation, Experience, Guide, Booking, Review, \
+from extensions import db   # db from extensions — no circular import
+from models import User, Destination, Accommodation, Experience, Guide, Booking, Review, \
     Availability, Notification, EscrowTransaction, PricingRule, CommissionLedger, KYCRecord, GuideVideo
 from sqlalchemy import distinct
 from flask_jwt_extended import (
-    JWTManager, create_access_token, jwt_required, get_jwt_identity, 
+    create_access_token, jwt_required, get_jwt_identity,
     set_access_cookies, unset_jwt_cookies
 )
 from flask_cors import CORS
@@ -107,9 +108,9 @@ app.config["JWT_TOKEN_LOCATION"] = ["headers", "cookies"]
 app.config["JWT_COOKIE_SECURE"] = False # Set to True in production (HTTPS)
 app.config["JWT_COOKIE_CSRF_PROTECT"] = False # Simplify for dev
 
-# Initialize Extensions
+# Initialize Extensions — db and jwt already imported from extensions.py
 db.init_app(app)
-jwt = JWTManager(app)
+jwt.init_app(app)
 
 # Phase 8: COMMISSION_RATE config
 app.config["COMMISSION_RATE"] = float(os.environ.get("COMMISSION_RATE", "0.10"))
