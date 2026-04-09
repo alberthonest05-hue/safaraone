@@ -14,3 +14,4 @@ sib-api-v3-sdk
 # Phase 8 additions
 cloudinary
 firebase-admin
+flask-socketio

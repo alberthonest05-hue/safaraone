@@ -1,68 +1,84 @@
 {% extends "base.html" %}
 {% block title %}Host Dashboard — SafaraOne{% endblock %}
-
 {% block content %}
-<section style="padding:80px 24px; min-height:80vh;">
-  <div style="max-width:1100px; margin:0 auto;">
-    <div style="margin-bottom:40px;">
-      <h1 style="font-size:2rem; font-weight:800; color:var(--amber); margin-bottom:8px;">
-        🏠 Host Dashboard
-      </h1>
-      <p style="color:var(--text-secondary);">Welcome back, {{ host.username }}. Here is a summary of your listings.</p>
-    </div>
+<div class="dash-container">
 
-    <!-- Stats Row -->
-    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:48px;">
-      <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:24px;">
-        <p style="margin:0 0 8px; font-size:0.85rem; color:var(--text-muted);">Total Bookings</p>
-        <p style="margin:0; font-size:2rem; font-weight:800;">{{ stats.total_bookings }}</p>
-      </div>
-      <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); border-radius:16px; padding:24px;">
-        <p style="margin:0 0 8px; font-size:0.85rem; color:var(--text-muted);">Confirmed</p>
-        <p style="margin:0; font-size:2rem; font-weight:800; color:#10b981;">{{ stats.confirmed }}</p>
-      </div>
-      <div style="background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.2); border-radius:16px; padding:24px;">
-        <p style="margin:0 0 8px; font-size:0.85rem; color:var(--text-muted);">Pending</p>
-        <p style="margin:0; font-size:2rem; font-weight:800; color:var(--amber);">{{ stats.pending }}</p>
-      </div>
-      <div style="background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.2); border-radius:16px; padding:24px;">
-        <p style="margin:0 0 8px; font-size:0.85rem; color:var(--text-muted);">Revenue (USD)</p>
-        <p style="margin:0; font-size:2rem; font-weight:800; color:#6366f1;">${{ "%.0f"|format(stats.total_revenue) }}</p>
-      </div>
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
+  <div class="dash-header">
+    <div>
+      <h1 class="dash-title">Host Dashboard 🏡</h1>
+      <p class="dash-sub">Welcome back, <strong>{{ host.username }}</strong></p>
     </div>
+    <div class="header-actions">
+      <a href="{{ url_for('host_edit_profile') }}" class="btn-secondary">Edit Profile</a>
+      <a href="{{ url_for('notification_center') }}" class="btn-notif">
+        🔔 {% if unread_notifications > 0 %}<span class="notif-dot">{{ unread_notifications }}</span>{% endif %}
+      </a>
+    </div>
+  </div>
 
-    <!-- Recent Bookings -->
-    <h2 style="font-size:1.3rem; font-weight:700; margin-bottom:16px;">Recent Bookings</h2>
+  <!-- ── Stat Cards ─────────────────────────────────────────────────────── -->
+  <div class="stats-grid">
+    <div class="stat-card glass">
+      <span class="stat-icon">📅</span>
+      <div class="stat-value">{{ stats.total_bookings }}</div>
+      <div class="stat-label">Total Bookings</div>
+    </div>
+    <div class="stat-card glass">
+      <span class="stat-icon">✅</span>
+      <div class="stat-value">{{ stats.confirmed }}</div>
+      <div class="stat-label">Confirmed</div>
+    </div>
+    <div class="stat-card glass">
+      <span class="stat-icon">⏳</span>
+      <div class="stat-value">{{ stats.pending }}</div>
+      <div class="stat-label">Pending</div>
+    </div>
+    <div class="stat-card glass">
+      <span class="stat-icon">💰</span>
+      <div class="stat-value">USD {{ "%.0f" | format(stats.total_revenue) }}</div>
+      <div class="stat-label">Total Revenue</div>
+    </div>
+  </div>
+
+  <!-- ── Nav Tabs ───────────────────────────────────────────────────────── -->
+  <div class="dash-tabs">
+    <button class="tab active" onclick="showTab('bookings', this)">Bookings</button>
+    <button class="tab" onclick="showTab('reviews', this)">Reviews</button>
+    <button class="tab" onclick="showTab('listings', this)">My Listings</button>
+  </div>
+
+  <!-- ── Bookings Tab ───────────────────────────────────────────────────── -->
+  <div id="tab-bookings" class="tab-panel">
     {% if bookings %}
-    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08); border-radius:16px; overflow:hidden; margin-bottom:48px;">
-      <table style="width:100%; border-collapse:collapse;">
+    <div class="table-wrap glass">
+      <table class="dash-table">
         <thead>
-          <tr style="background:rgba(255,255,255,0.05);">
-            <th style="padding:14px 20px; text-align:left; font-size:0.8rem; color:var(--text-muted);">BOOKING ID</th>
-            <th style="padding:14px 20px; text-align:left; font-size:0.8rem; color:var(--text-muted);">TYPE</th>
-            <th style="padding:14px 20px; text-align:left; font-size:0.8rem; color:var(--text-muted);">DATE</th>
-            <th style="padding:14px 20px; text-align:left; font-size:0.8rem; color:var(--text-muted);">AMOUNT</th>
-            <th style="padding:14px 20px; text-align:left; font-size:0.8rem; color:var(--text-muted);">STATUS</th>
+          <tr>
+            <th>#</th><th>Tourist</th><th>Type</th><th>Date</th><th>Amount</th><th>Status</th><th>Action</th>
           </tr>
         </thead>
         <tbody>
-          {% for b in bookings[:15] %}
-          <tr style="border-top:1px solid rgba(255,255,255,0.05);">
-            <td style="padding:14px 20px; font-weight:600;">#{{ b.id }}</td>
-            <td style="padding:14px 20px; color:var(--text-secondary);">{{ b.item_type.title() }}</td>
-            <td style="padding:14px 20px; color:var(--text-secondary); font-size:0.85rem;">
-              {{ b.scheduled_date.strftime('%b %d, %Y') if b.scheduled_date else '—' }}
+          {% for b in bookings %}
+          <tr>
+            <td class="id-cell">#{{ b.id }}</td>
+            <td>{{ b.tourist.username if b.tourist else '—' }}</td>
+            <td><span class="type-pill type-{{ b.item_type }}">{{ b.item_type | capitalize }}</span></td>
+            <td>{{ b.scheduled_date or '—' }}</td>
+            <td>
+              {% if b.currency == 'TZS' and b.tzs_amount %}
+                TZS {{ "{:,.0f}".format(b.tzs_amount) }}
+              {% else %}
+                USD {{ "%.2f" | format(b.amount) }}
+              {% endif %}
             </td>
-            <td style="padding:14px 20px; font-weight:600;">${{ "%.2f"|format(b.amount_usd) }}</td>
-            <td style="padding:14px 20px;">
-              <span style="padding:4px 12px; border-radius:99px; font-size:0.75rem; font-weight:700;
-                {% if b.status == 'confirmed' %}background:rgba(16,185,129,0.15); color:#10b981;
-                {% elif b.status == 'pending' %}background:rgba(245,158,11,0.15); color:var(--amber);
-                {% elif b.status == 'cancelled' %}background:rgba(239,68,68,0.15); color:#ef4444;
-                {% else %}background:rgba(255,255,255,0.05); color:var(--text-muted);
-                {% endif %}">
-                {{ b.status.title() }}
-              </span>
+            <td><span class="status-pill status-{{ b.status }}">{{ b.status | capitalize }}</span></td>
+            <td>
+              {% if b.status == 'pending' and host.booking_type == 'request' %}
+                <button class="action-btn approve-btn" onclick="approveBooking({{ b.id }})">Approve</button>
+              {% else %}
+                <span class="na-text">—</span>
+              {% endif %}
             </td>
           </tr>
           {% endfor %}
@@ -70,26 +86,148 @@
       </table>
     </div>
     {% else %}
-    <p style="color:var(--text-muted); margin-bottom:48px;">No bookings yet for your listings.</p>
-    {% endif %}
-
-    <!-- Recent Reviews -->
-    {% if recent_reviews %}
-    <h2 style="font-size:1.3rem; font-weight:700; margin-bottom:16px;">Recent Reviews</h2>
-    <div style="display:flex; flex-direction:column; gap:12px;">
-      {% for r in recent_reviews %}
-      <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:20px;">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-          <span style="font-weight:600;">{{ r.tourist.username if r.tourist else 'Anonymous' }}</span>
-          <span style="color:var(--amber);">{{ '★' * r.rating }}{{ '☆' * (5 - r.rating) }}</span>
-        </div>
-        {% if r.comment %}
-        <p style="margin:0; color:var(--text-secondary); font-size:0.9rem;">{{ r.comment }}</p>
-        {% endif %}
-      </div>
-      {% endfor %}
+    <div class="empty-panel">
+      <p class="empty-text">No bookings yet. Once tourists book your listings, they'll appear here.</p>
     </div>
     {% endif %}
   </div>
-</section>
+
+  <!-- ── Reviews Tab ───────────────────────────────────────────────────── -->
+  <div id="tab-reviews" class="tab-panel" style="display:none;">
+    {% if recent_reviews %}
+    <div class="reviews-list">
+      {% for r in recent_reviews %}
+      <div class="review-card glass">
+        <div class="review-header">
+          <div class="stars">{{ '⭐' * r.rating }}{{ '☆' * (5 - r.rating) }}</div>
+          <span class="review-date">{{ r.created_at.strftime('%d %b %Y') if r.created_at else '' }}</span>
+        </div>
+        {% if r.comment %}
+        <p class="review-comment">{{ r.comment }}</p>
+        {% endif %}
+        <p class="review-meta">{{ r.item_type | capitalize }} · by {{ r.tourist.username if r.tourist else 'Guest' }}</p>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-panel">
+      <p class="empty-text">No reviews yet. Reviews will appear here after tourists complete their bookings.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ── Listings Tab ─────────────────────────────────────────────────── -->
+  <div id="tab-listings" class="tab-panel" style="display:none;">
+    <div class="listings-actions">
+      <a href="{{ url_for('pricing_dashboard') }}" class="btn-primary">⚡ Manage Pricing Rules</a>
+      <div class="booking-type-row glass">
+        <span class="btype-label">Booking Confirmation</span>
+        <div class="toggle-group">
+          <button class="toggle-btn {% if host.booking_type == 'instant' %}active{% endif %}"
+                  onclick="setBookingType('instant', this)">⚡ Instant</button>
+          <button class="toggle-btn {% if host.booking_type != 'instant' %}active{% endif %}"
+                  onclick="setBookingType('request', this)">📋 Request</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<style>
+  .dash-container { max-width: 1100px; margin: 0 auto; padding: 80px 24px 48px 24px; }
+  .dash-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; flex-wrap: wrap; gap: 16px; }
+  .dash-title { font-size: 28px; font-weight: 800; color: #fff; margin: 0 0 4px; }
+  .dash-sub { font-size: 14px; color: #64748b; }
+  .header-actions { display: flex; gap: 10px; align-items: center; }
+  .btn-secondary { padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 600; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #94a3b8; text-decoration: none; }
+  .btn-primary { display: inline-block; padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 700; background: #f97316; color: #fff; text-decoration: none; }
+  .btn-notif { position: relative; padding: 10px 14px; border-radius: 10px; font-size: 18px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); text-decoration: none; }
+  .notif-dot { position: absolute; top: 6px; right: 6px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; border-radius: 99px; padding: 1px 5px; }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px; }
+  .stat-card { border-radius: 14px; padding: 24px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); text-align: center; }
+  .stat-icon { font-size: 28px; display: block; margin-bottom: 10px; }
+  .stat-value { font-size: 26px; font-weight: 800; color: #fff; }
+  .stat-label { font-size: 12px; color: #64748b; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+  .dash-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+  .tab { padding: 10px 20px; background: none; border: none; color: #64748b; font-size: 14px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.2s; }
+  .tab.active { color: #f97316; border-bottom-color: #f97316; }
+  .tab-panel { display: block; }
+
+  .table-wrap { border-radius: 14px; overflow: hidden; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); }
+  .dash-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .dash-table th { padding: 14px 16px; text-align: left; font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid rgba(255,255,255,0.07); }
+  .dash-table td { padding: 14px 16px; color: #e2e8f0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .dash-table tr:last-child td { border-bottom: none; }
+  .dash-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .id-cell { color: #64748b; font-family: monospace; }
+  .type-pill, .status-pill { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+  .type-stay       { background: rgba(139,92,246,0.12); color: #a78bfa; }
+  .type-experience { background: rgba(16,185,129,0.12); color: #34d399; }
+  .status-confirmed{ background: rgba(16,185,129,0.12); color: #10b981; }
+  .status-pending  { background: rgba(251,191,36,0.12); color: #fbbf24; }
+  .status-cancelled{ background: rgba(100,116,139,0.12); color: #64748b; }
+  .action-btn { padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; }
+  .approve-btn { background: rgba(16,185,129,0.15); color: #10b981; }
+  .na-text { color: #334155; }
+
+  .reviews-list { display: flex; flex-direction: column; gap: 14px; }
+  .review-card { border-radius: 12px; padding: 20px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); }
+  .review-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
+  .stars { font-size: 16px; }
+  .review-date { font-size: 12px; color: #475569; }
+  .review-comment { font-size: 14px; color: #cbd5e1; margin: 0 0 8px; }
+  .review-meta { font-size: 12px; color: #475569; }
+
+  .listings-actions { display: flex; flex-direction: column; gap: 16px; }
+  .booking-type-row { display: flex; align-items: center; justify-content: space-between; border-radius: 12px; padding: 18px 20px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); }
+  .btype-label { font-size: 14px; color: #94a3b8; font-weight: 500; }
+  .toggle-group { display: flex; gap: 6px; }
+  .toggle-btn { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #64748b; cursor: pointer; transition: all 0.2s; }
+  .toggle-btn.active { background: #f97316; color: #fff; border-color: #f97316; }
+
+  .empty-panel { padding: 48px; text-align: center; }
+  .empty-text { color: #475569; font-size: 14px; }
+
+  @media (max-width: 768px) {
+    .dash-table { font-size: 12px; }
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .dash-table th:nth-child(2), .dash-table td:nth-child(2) { display: none; }
+  }
+</style>
+
+<script>
+function showTab(name, btn) {
+  document.querySelectorAll(".tab-panel").forEach(p => p.style.display = "none");
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  document.getElementById("tab-" + name).style.display = "block";
+  btn.classList.add("active");
+}
+async function approveBooking(bookingId) {
+  const token = localStorage.getItem("access_token") || "";
+  const res = await fetch(`/api/bookings/${bookingId}/approve`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (data.status === "success") location.reload();
+  else alert(data.message);
+}
+async function setBookingType(type, btn) {
+  try {
+    const token = localStorage.getItem("access_token") || "";
+    await fetch("/api/guide/booking-type", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ booking_type: type }),
+    });
+  } catch (e) {
+    console.error("Booking type update deferred to Feature 5:", e);
+  }
+  document.querySelectorAll(".toggle-btn").forEach(b => b.classList.remove("active"));
+  if (btn) btn.classList.add("active");
+}
+</script>
 {% endblock %}

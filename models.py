@@ -22,8 +22,8 @@ class User(db.Model):
     is_admin           = db.Column(db.Boolean, default=False)
 
     def set_password(self, password):
-        # We remove the hardcoded method and let the system use its most modern default scrambler
-        self.password_hash = generate_password_hash(password)
+        # Use pbkdf2:sha256 because Python 3.9 on Mac might lack scrypt support
+        self.password_hash = generate_password_hash(password, method="pbkdf2:sha256")
 
     def check_password(self, password):
         # If no password is provided, don't crash, just reject the login

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Availability Calendar — SafaraOne{% endblock %}
+{% block content %}
+<div class="avail-container">
+  <div class="page-header">
+    <a href="{{ url_for('host_dashboard') }}" class="back-link">← Dashboard</a>
+    <h1 class="page-title">Availability Calendar 📅</h1>
+    <p class="page-sub">Block dates you're unavailable. Tourists will not be able to book those dates.</p>
+  </div>
+
+  <div class="avail-grid">
+    <!-- Calendar picker -->
+    <div class="avail-card glass">
+      <h2 class="card-heading">Select Dates to Block</h2>
+      <input id="datePicker" class="flat-picker" placeholder="Click to pick a date" readonly/>
+      <div class="form-group" style="margin-top:14px;">
+        <label class="form-label">Reason (optional)</label>
+        <input type="text" id="reasonInput" class="form-input" placeholder="e.g. National holiday, personal leave"/>
+      </div>
+      <button class="block-btn" onclick="blockDate()">Block Date</button>
+      <div id="blockFeedback" class="feedback" style="display:none;"></div>
+    </div>
+
+    <!-- Blocked dates list -->
+    <div class="avail-card glass">
+      <h2 class="card-heading">Blocked Dates</h2>
+      {% if blocked_dates %}
+      <div class="blocked-list" id="blockedList">
+        {% for a in blocked_dates %}
+        <div class="blocked-row" id="avail-{{ a.id }}">
+          <div>
+            <span class="blocked-date">{{ a.date }}</span>
+            {% if a.reason %}<span class="blocked-reason">{{ a.reason }}</span>{% endif %}
+          </div>
+          <button class="unblock-btn" onclick="unblockDate({{ a.id }})">Unblock</button>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="empty-text">No dates blocked. You're available every day.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- flatpickr CDN -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"/>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+<style>
+.avail-container { max-width: 900px; margin: 0 auto; padding: 48px 24px; }
+.page-header { margin-bottom: 32px; }
+.back-link { color: #94a3b8; font-size: 13px; text-decoration: none; }
+.page-title { font-size: 26px; font-weight: 800; color: #fff; margin: 10px 0 4px; }
+.page-sub { font-size: 14px; color: #64748b; }
+.avail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.avail-card { border-radius: 16px; padding: 28px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+.card-heading { font-size: 16px; font-weight: 700; color: #fff; margin: 0 0 18px; }
+.flat-picker { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 14px; color: #e2e8f0; font-size: 14px; outline: none; cursor: pointer; }
+.form-label { font-size: 13px; color: #94a3b8; display: block; margin-bottom: 6px; }
+.form-input { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 11px 14px; color: #e2e8f0; font-size: 14px; outline: none; box-sizing: border-box; }
+.block-btn { width: 100%; margin-top: 16px; padding: 13px; border-radius: 10px; background: #f97316; color: #fff; font-size: 14px; font-weight: 700; border: none; cursor: pointer; }
+.feedback { margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 13px; }
+.feedback-ok  { background: rgba(16,185,129,0.08); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.15); }
+.feedback-err { background: rgba(239,68,68,0.08);  color: #fca5a5; border: 1px solid rgba(239,68,68,0.15); }
+.blocked-list { display: flex; flex-direction: column; gap: 10px; }
+.blocked-row { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; }
+.blocked-date { font-size: 14px; color: #e2e8f0; font-weight: 500; }
+.blocked-reason { font-size: 12px; color: #64748b; display: block; margin-top: 2px; }
+.unblock-btn { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; color: #ef4444; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15); cursor: pointer; }
+.empty-text { color: #475569; font-size: 14px; }
+@media(max-width:640px){ .avail-grid { grid-template-columns: 1fr; } }
+</style>
+
+<script>
+let selectedDate = null;
+const fp = flatpickr("#datePicker", {
+  minDate: "today",
+  dateFormat: "Y-m-d",
+  onChange: (dates, str) => { selectedDate = str; },
+  inline: false,
+});
+
+const token = localStorage.getItem("access_token") || "";
+
+async function blockDate() {
+  if (!selectedDate) { showFeedback("Please select a date first.", false); return; }
+  const reason = document.getElementById("reasonInput").value.trim();
+  const res  = await fetch("/api/availability", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify({ date: selectedDate, reason }),
+  });
+  const data = await res.json();
+  if (data.status === "success") {
+    showFeedback(`${selectedDate} has been blocked.`, true);
+    addBlockedRow(data.id, selectedDate, reason);
+    fp.clear();
+    selectedDate = null;
+  } else {
+    showFeedback(data.message, false);
+  }
+}
+
+async function unblockDate(id) {
+  const res = await fetch(`/api/availability/${id}`, {
+    method: "DELETE",
+    headers: { "Authorization": `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (data.status === "success") {
+    document.getElementById(`avail-${id}`)?.remove();
+    showFeedback("Date unblocked.", true);
+  } else {
+    showFeedback(data.message || "Failed to unblock date.", false);
+  }
+}
+
+function addBlockedRow(id, date, reason) {
+  const list = document.getElementById("blockedList") || (() => {
+    const l = document.createElement("div");
+    l.className = "blocked-list";
+    l.id = "blockedList";
+    document.querySelector(".avail-card:last-child").appendChild(l);
+    return l;
+  })();
+  const row = document.createElement("div");
+  row.className = "blocked-row";
+  row.id = `avail-${id}`;
+  row.innerHTML = `<div><span class="blocked-date">${date}</span>${reason ? \`<span class="blocked-reason">${reason}</span>\` : ""}</div><button class="unblock-btn" onclick="unblockDate(${id})">Unblock</button>`;
+  list.prepend(row);
+}
+
+function showFeedback(msg, ok) {
+  const el = document.getElementById("blockFeedback");
+  el.textContent = msg;
+  el.className = `feedback ${ok ? "feedback-ok" : "feedback-err"}`;
+  el.style.display = "block";
+  setTimeout(() => el.style.display = "none", 4000);
+}
+</script>
+{% endblock %}

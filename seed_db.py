@@ -6,7 +6,22 @@ from data.mock_data import DESTINATIONS, ACCOMMODATIONS, EXPERIENCES, GUIDES
 
 def seed():
     with app.app_context():
-        # THE FIX: Safety check - only seed if the marketplace is empty!
+        # Seed Users
+        from models import User
+        if not User.query.filter_by(email="tourist@safara.com").first():
+            print("Seeding Tourist User...")
+            u1 = User(username="safara_tourist", email="tourist@safara.com", role="tourist")
+            u1.set_password("safara123")
+            db.session.add(u1)
+        
+        if not User.query.filter_by(email="guide@safara.com").first():
+            print("Seeding Guide User...")
+            u2 = User(username="safara_guide", email="guide@safara.com", role="guide")
+            u2.set_password("safara123")
+            db.session.add(u2)
+            
+        db.session.commit()
+
         # We check for Destinations because that is what fills the main site pages.
         if Destination.query.first():
             print("Marketplace data already exists. Skipping seed to prevent duplicates.")

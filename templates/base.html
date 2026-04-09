@@ -39,13 +39,16 @@
 
     <!-- Nav Links -->
     <ul class="nav-links" id="nav-links">
-      {% if current_user_role == 'guide' %}
-        <li><a href="/dashboard" class="nav-link">My Dashboard</a></li>
+      {% if current_user_role in ['guide', 'host', 'operator'] %}
+        <li><a href="/host/dashboard" class="nav-link">My Dashboard</a></li>
         <li><a href="/dashboard/bookings" class="nav-link">Active Bookings</a></li>
         <li><a href="/dashboard/edit-profile" class="nav-link">Edit Profile</a></li>
       {% elif current_user_role == 'admin' %}
         <li><a href="/admin" class="nav-link">Admin Panel</a></li>
         <li><a href="{{ url_for('destinations') }}" class="nav-link">Destinations</a></li>
+        <li><a href="{{ url_for('stays') }}" class="nav-link">Stays</a></li>
+        <li><a href="{{ url_for('experiences') }}" class="nav-link">Experiences</a></li>
+        <li><a href="{{ url_for('guides') }}" class="nav-link">Guides</a></li>
       {% else %}
         <li><a href="{{ url_for('destinations') }}" class="nav-link {% if request.endpoint == 'destinations' %}active{% endif %}">Destinations</a></li>
         <li><a href="{{ url_for('stays') }}" class="nav-link {% if request.endpoint == 'stays' %}active{% endif %}">Stays</a></li>
@@ -62,7 +65,7 @@
     <div class="nav-actions">
       {% if current_user_name %}
         {% if current_user_role == 'tourist' %}
-          <a href="/become-guide-info" class="btn btn-ghost" style="color:var(--amber); border: 1px solid var(--amber);">Become a Guide</a>
+          <a href="/become-guide-info" class="btn btn-ghost btn-become-guide" style="color:var(--amber); border: 1px solid var(--amber);">Become a Guide</a>
         {% endif %}
         <!-- Phase 8 — Notification Bell -->
         {% if current_user_name %}

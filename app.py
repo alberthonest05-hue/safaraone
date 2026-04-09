@@ -113,6 +113,19 @@ except Exception as _cloud_err:
     import logging
     logging.warning(f'[CLOUDINARY] Init failed: {_cloud_err}')
 
+# Phase 8: Firebase init (graceful if keys are missing)
+try:
+    import firebase_admin
+    from firebase_admin import credentials
+    import json
+    fb_creds = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
+    if fb_creds:
+        cred = credentials.Certificate(json.loads(fb_creds))
+        firebase_admin.initialize_app(cred)
+except Exception as fb_err:
+    import logging
+    logging.warning(f"[FIREBASE] Init failed: {fb_err}")
+
 
 # ── Phase 8 — Universal Item Owner Helper ────────────────────────────────────
 def get_item_owner(item_type: str, item_id) -> "User | None":
@@ -1716,12 +1729,16 @@ def payment_callback():
     owner = get_item_owner(booking.item_type, booking.item_id)
     tourist = db.session.get(User, booking.user_id)
 
-    # Note: Use internal 'booking_type' if present, otherwise default to instant for guides
-    booking_type = getattr(booking, 'booking_type', 'instant') or 'instant'
-    if booking.item_type == 'guide':
-        booking_type = 'instant'
-    elif booking.item_type in ['accommodation', 'stay', 'experience']:
-        booking_type = 'request'
+    # Note: Use internal 'booking_type' if present, otherwise default based on item_type
+    booking_type = getattr(booking, 'booking_type', None)
+    if not booking_type:
+        if booking.item_type == 'guide':
+            # Phase 8: Use guide's preferred booking_type
+            guide_user = get_item_owner(booking.item_type, booking.item_id)
+            booking_type = getattr(guide_user, 'booking_type', 'request') or 'request'
+        else:
+            # Stays, experiences, etc. default to 'request'
+            booking_type = 'request'
 
     # Set status based on booking type
     if booking_type == "instant":
@@ -1828,10 +1845,6 @@ def payment_cancel_page():
     return render_template('payment_cancel.html')
 
 
-if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5050)
-
-
 # =============================================================================
 # PHASE 8 ROUTES
 # =============================================================================
@@ -1843,14 +1856,13 @@ if __name__ == "__main__":
 @app.route("/host/dashboard")
 @jwt_required()
 def host_dashboard():
-    """Main dashboard for accommodation hosts and experience providers. Feature #58."""
+    """Main dashboard for accommodation hosts, experience providers, and guides."""
     current_user_id = get_jwt_identity()
     host = User.query.get_or_404(current_user_id)
 
-    if host.role not in ("host", "operator", "admin"):
+    if host.role not in ("host", "operator", "admin", "guide"):
         return redirect(url_for("index"))
 
-    # BUG FIX: Use Accommodation (not Stay), check for host_id attribute
     my_stay_ids = []
     if hasattr(Accommodation, "host_id"):
         my_stay_ids = [s.id for s in Accommodation.query.filter_by(host_id=int(current_user_id)).all()]
@@ -1859,29 +1871,46 @@ def host_dashboard():
     if hasattr(Experience, "host_id"):
         my_experience_ids = [e.id for e in Experience.query.filter_by(host_id=int(current_user_id)).all()]
 
-    bookings = Booking.query
-    if my_stay_ids or my_experience_ids:
-        bookings = bookings.filter(
-            db.or_(
-                db.and_(Booking.item_type == "accommodation", Booking.item_id.in_([str(x) for x in my_stay_ids])),
-                db.and_(Booking.item_type == "experience",    Booking.item_id.in_([str(x) for x in my_experience_ids])),
-            )
-        )
-    bookings = bookings.order_by(Booking.created_at.desc()).all()
+    # If guide, get their guide profile ID object
+    my_guide_id_str = None
+    if host.role == "guide":
+        guide_profile = Guide.query.filter_by(user_id=int(current_user_id)).first()
+        if guide_profile:
+            my_guide_id_str = str(guide_profile.id)
+
+    # Base filter condition
+    filter_conditions = []
+    if my_stay_ids:
+        filter_conditions.append(db.and_(Booking.item_type == "accommodation", Booking.item_id.in_([str(x) for x in my_stay_ids])))
+    if my_experience_ids:
+        filter_conditions.append(db.and_(Booking.item_type == "experience", Booking.item_id.in_([str(x) for x in my_experience_ids])))
+    if my_guide_id_str:
+        filter_conditions.append(db.and_(Booking.item_type == "guide", Booking.item_id == my_guide_id_str))
+
+    # Apply to bookings
+    if not filter_conditions:
+        bookings = []
+    else:
+        bookings = Booking.query.filter(db.or_(*filter_conditions)).all()
 
     total_bookings = len(bookings)
     confirmed      = sum(1 for b in bookings if b.status == "confirmed")
     total_revenue  = sum(b.amount for b in bookings if b.status == "confirmed")
     pending_count  = sum(1 for b in bookings if b.status == "pending")
 
-    reviews = []
-    if my_stay_ids or my_experience_ids:
-        reviews = Review.query.filter(
-            db.or_(
-                db.and_(Review.item_type == "accommodation", Review.item_id.in_([str(x) for x in my_stay_ids])),
-                db.and_(Review.item_type == "experience",    Review.item_id.in_([str(x) for x in my_experience_ids])),
-            )
-        ).order_by(Review.created_at.desc()).limit(10).all()
+    # Apply to reviews
+    review_conditions = []
+    if my_stay_ids:
+        review_conditions.append(db.and_(Review.item_type == "accommodation", Review.item_id.in_([str(x) for x in my_stay_ids])))
+    if my_experience_ids:
+        review_conditions.append(db.and_(Review.item_type == "experience", Review.item_id.in_([str(x) for x in my_experience_ids])))
+    if my_guide_id_str:
+        review_conditions.append(db.and_(Review.item_type == "guide", Review.item_id == my_guide_id_str))
+
+    if not review_conditions:
+        reviews = []
+    else:
+        reviews = Review.query.filter(db.or_(*review_conditions)).order_by(Review.created_at.desc()).limit(10).all()
 
     unread_notifications = Notification.query.filter_by(
         user_id=current_user_id, is_read=False
@@ -2028,7 +2057,6 @@ def submit_review():
 
     review = Review(
         tourist_id = current_user_id,
-        user_id    = current_user_id,
         booking_id = booking_id,
         item_type  = booking.item_type,
         item_id    = str(booking.item_id),
@@ -2724,3 +2752,7 @@ def set_guide_booking_type():
     guide.booking_type = btype
     db.session.commit()
     return jsonify({"status": "success", "booking_type": btype})
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=8080)
